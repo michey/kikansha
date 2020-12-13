@@ -1,10 +1,15 @@
+mod q;
+
 use crate::debug::fps::Counter;
-use crate::figure::VertexParams;
+use crate::figure::PerIndicesParams;
+use crate::figure::PerVerexParams;
 use crate::scene::camera::ViewAndProject;
 use crate::scene::Scene;
+use crate::state::q::QueueFamilyIndices;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::SyncSender;
 use std::sync::Mutex;
+use vulkano::descriptor::descriptor_set::DescriptorSetsCollection;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -27,11 +32,11 @@ use vulkano::instance::{
 use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::pipeline::{viewport::Viewport, GraphicsPipeline};
 use vulkano::swapchain;
-use vulkano::swapchain::{
-     Capabilities, ColorSpace, FullscreenExclusive, PresentMode,
-    SupportedPresentModes, Surface, Swapchain,
-};
 use vulkano::swapchain::{AcquireError, SwapchainCreationError};
+use vulkano::swapchain::{
+    Capabilities, ColorSpace, FullscreenExclusive, PresentMode, SupportedPresentModes, Surface,
+    Swapchain,
+};
 use vulkano::sync;
 use vulkano::sync::{FlushError, GpuFuture, SharingMode};
 use vulkano_win::VkSurfaceBuild;
@@ -60,24 +65,6 @@ mod fragment_shader {
     }
 }
 
-struct QueueFamilyIndices {
-    graphics_family: i32,
-    present_family: i32,
-}
-
-impl QueueFamilyIndices {
-    fn new() -> Self {
-        Self {
-            graphics_family: -1,
-            present_family: -1,
-        }
-    }
-
-    fn is_complete(&self) -> bool {
-        self.graphics_family >= 0 && self.present_family >= 0
-    }
-}
-
 /// Required device extensions
 fn device_extensions() -> DeviceExtensions {
     DeviceExtensions {
@@ -88,7 +75,7 @@ fn device_extensions() -> DeviceExtensions {
 }
 
 type ConcreteGraphicsPipeline = GraphicsPipeline<
-    SingleBufferDefinition<VertexParams>,
+    SingleBufferDefinition<PerVerexParams>,
     Box<dyn PipelineLayoutAbstract + Send + Sync + 'static>,
     Arc<dyn RenderPassAbstract + Send + Sync + 'static>,
 >;
@@ -187,12 +174,12 @@ impl State {
     pub fn update_swapchain(&mut self) {
         let dimensions: [u32; 2] = self.surface.window().inner_size().into();
 
-        let (new_swapchain, _new_images) = match self.swap_chain.recreate_with_dimensions(dimensions)
-        {
-            Ok(r) => r,
-            Err(SwapchainCreationError::UnsupportedDimensions) => return,
-            Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
-        };
+        let (new_swapchain, _new_images) =
+            match self.swap_chain.recreate_with_dimensions(dimensions) {
+                Ok(r) => r,
+                Err(SwapchainCreationError::UnsupportedDimensions) => return,
+                Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
+            };
 
         self.swap_chain = new_swapchain;
     }
@@ -588,6 +575,12 @@ impl State {
             .swap_chain_framebuffers
             .iter()
             .map(|framebuffer| {
+                let layout = self
+                    .graphics_pipeline
+                    .layout()
+                    .descriptor_set_layout(0)
+                    .unwrap();
+
                 let matrices_buff = CpuAccessibleBuffer::from_data(
                     self.device.clone(),
                     BufferUsage::all(),
@@ -596,54 +589,6 @@ impl State {
                 )
                 .unwrap();
 
-                let layout = self
-                    .graphics_pipeline
-                    .layout()
-                    .descriptor_set_layout(0)
-                    .unwrap();
-
-                let set = PersistentDescriptorSet::start(layout.clone())
-                    .add_buffer(matrices_buff.clone())
-                    .unwrap()
-                    .build()
-                    .unwrap();
-
-                let figures_buff: Vec<Arc<CpuAccessibleBuffer<[VertexParams]>>> = scene
-                    .figures
-                    .clone()
-                    .into_iter()
-                    .map(|f| {
-                        let mutation = f.mutation;
-                        let base_color = f.base_color;
-                        CpuAccessibleBuffer::from_iter(
-                            self.device.clone(),
-                            BufferUsage::all(),
-                            false,
-                            f.vertices
-                                .into_iter()
-                                .map(|v| VertexParams::new(v, mutation, base_color))
-                                .collect::<Vec<VertexParams>>()
-                                .into_iter(),
-                        )
-                        .unwrap()
-                    })
-                    .collect();
-
-                let indices_buff: Vec<Arc<CpuAccessibleBuffer<[u32]>>> = scene
-                    .figures
-                    .clone()
-                    .into_iter()
-                    .map(|f| {
-                        CpuAccessibleBuffer::from_iter(
-                            self.device.clone(),
-                            BufferUsage::all(),
-                            false,
-                            f.indices.into_iter(),
-                        )
-                        .unwrap()
-                    })
-                    .collect();
-
                 let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
                     self.device.clone(),
                     queue_family,
@@ -651,24 +596,75 @@ impl State {
                 .unwrap();
 
                 let dynamic_state = { self.dynamic_state.lock().unwrap().clone() };
-                builder
+                let passes = builder
                     .begin_render_pass(
                         framebuffer.clone(),
                         false,
                         vec![[1.0, 1.0, 1.0, 1.0].into(), 1f32.into()],
                     )
-                    .unwrap()
-                    .draw_indexed(
-                        self.graphics_pipeline.clone(),
-                        &dynamic_state,
-                        figures_buff[0].clone(),
-                        indices_buff[0].clone(),
-                        set,
-                        (),
-                    )
-                    .unwrap()
-                    .end_render_pass()
                     .unwrap();
+
+                let pep = scene
+                    .figures
+                    .clone()
+                    .into_iter()
+                    .fold(passes, |b, figure_set| {
+                        let per_vertex_data: Vec<PerVerexParams> = figure_set
+                            .figure
+                            .vertices
+                            .clone()
+                            .into_iter()
+                            .map(|v| PerVerexParams {
+                                position: v.position,
+                                color: figure_set.figure.base_color,
+                            })
+                            .collect();
+
+                        let ver_buff = CpuAccessibleBuffer::from_iter(
+                            self.device.clone(),
+                            BufferUsage::all(),
+                            false,
+                            per_vertex_data.into_iter(),
+                        )
+                        .unwrap();
+                        let indices_buff = CpuAccessibleBuffer::from_iter(
+                            self.device.clone(),
+                            BufferUsage::all(),
+                            false,
+                            figure_set.figure.indices.into_iter(),
+                        )
+                        .unwrap();
+
+                        figure_set.mutations.into_iter().fold(b, |acc, mutation| {
+                            let mutation_buff = CpuAccessibleBuffer::from_data(
+                                self.device.clone(),
+                                BufferUsage::all(),
+                                false,
+                                mutation,
+                            )
+                            .unwrap();
+
+                            let set = PersistentDescriptorSet::start(layout.clone())
+                                .add_buffer(matrices_buff.clone())
+                                .unwrap()
+                                .add_buffer(mutation_buff.clone())
+                                .unwrap()
+                                .build()
+                                .unwrap();
+
+                            acc.draw_indexed(
+                                self.graphics_pipeline.clone(),
+                                &dynamic_state,
+                                ver_buff.clone(),
+                                indices_buff.clone(),
+                                set,
+                                (),
+                            )
+                            .unwrap()
+                        })
+                    });
+
+                pep.end_render_pass().unwrap();
 
                 Arc::new(builder.build().unwrap())
             })

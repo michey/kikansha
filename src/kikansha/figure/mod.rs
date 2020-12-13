@@ -1,3 +1,23 @@
+#[derive(Default, Debug, Clone, Copy)]
+pub struct PerVerexParams {
+    pub position: [f32; 3],
+    pub color: [f32; 4],
+}
+
+vulkano::impl_vertex!(PerVerexParams, position, color);
+
+#[derive(Default, Debug, Clone)]
+pub struct PerIndicesParams {
+    indices: Vec<u32>,
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct PerInstanceParams {
+    offset: [f32; 3],
+    scale: f32,
+}
+
+vulkano::impl_vertex!(PerInstanceParams, offset, scale);
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct VertexParams {
@@ -40,7 +60,7 @@ impl FigureMutation {
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct Vertex {
-    position: [f32; 3],
+    pub position: [f32; 3],
 }
 
 impl Vertex {
@@ -53,26 +73,33 @@ impl Vertex {
 pub struct Figure {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
-    pub mutation: FigureMutation,
     pub base_color: [f32; 4],
 }
 
 impl Figure {
-    pub fn new(
-        vertices: Vec<Vertex>,
-        indices: Vec<u32>,
-        mutation: FigureMutation,
-        base_color: [f32; 4],
-    ) -> Self {
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>, base_color: [f32; 4]) -> Self {
         Self {
             vertices,
             indices,
-            mutation,
+            // mutation,
             base_color,
         }
     }
 
-    pub fn unit_cube(mutation: FigureMutation) -> Self {
+    pub fn unit_tetrahedron() -> Self {
+        let unit = 0.25;
+
+        let color = [0.0, 0.0, 1.0, 1.0];
+
+        let a = Vertex::new([-unit, unit, unit]);
+        let b = Vertex::new([unit, -unit, unit]);
+        let c = Vertex::new([unit, unit, -unit]);
+        let d = Vertex::new([-unit, -unit, -unit]);
+
+        Figure::new(vec![a, b, c, d], vec![0, 1, 2, 0, 1, 3, 0, 3, 2], color)
+    }
+
+    pub fn unit_cube() -> Self {
         let unit = 0.25;
 
         let color = [1.0, 0.0, 0.0, 1.0];
@@ -104,8 +131,19 @@ impl Figure {
             vec![
                 0, 1, 2, 0, 3, 2, 4, 5, 6, 4, 7, 6, 1, 2, 5, 5, 6, 2, 0, 3, 4, 4, 3, 7,
             ],
-            mutation,
             color,
         )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FigureSet {
+    pub figure: Figure,
+    pub mutations: Vec<FigureMutation>,
+}
+
+impl FigureSet {
+    pub fn new(figure: Figure, mutations: Vec<FigureMutation>) -> Self {
+        FigureSet { figure, mutations }
     }
 }
