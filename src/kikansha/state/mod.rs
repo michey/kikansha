@@ -1,15 +1,15 @@
+pub mod cache;
 mod q;
 
 use crate::debug::fps::Counter;
-use crate::figure::PerIndicesParams;
 use crate::figure::PerVerexParams;
 use crate::scene::camera::ViewAndProject;
 use crate::scene::Scene;
+use crate::state::cache::SceneCache;
 use crate::state::q::QueueFamilyIndices;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::SyncSender;
 use std::sync::Mutex;
-use vulkano::descriptor::descriptor_set::DescriptorSetsCollection;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -107,6 +107,7 @@ pub struct State {
     pub dynamic_state: Mutex<DynamicState>,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
+    scene_cache: SceneCache,
 }
 
 impl State {
@@ -166,6 +167,7 @@ impl State {
             dynamic_state,
             previous_frame_end,
             recreate_swap_chain: false,
+            scene_cache: SceneCache::new(),
         };
         app.create_command_buffers(scene);
         app
@@ -571,10 +573,13 @@ impl State {
             let locked_camera = scene.camera.lock().unwrap();
             locked_camera.get_matrices().clone()
         };
+        let cached_v = self.scene_cache.get_cache(scene, self.device.clone());
+        
         self.command_buffers = self
             .swap_chain_framebuffers
             .iter()
             .map(|framebuffer| {
+                
                 let layout = self
                     .graphics_pipeline
                     .layout()
@@ -604,64 +609,34 @@ impl State {
                     )
                     .unwrap();
 
-                let pep = scene
-                    .figures
+                let pep = cached_v
+                    .entities
                     .clone()
                     .into_iter()
-                    .fold(passes, |b, figure_set| {
-                        let per_vertex_data: Vec<PerVerexParams> = figure_set
-                            .figure
-                            .vertices
+                    .fold(passes, |b, cached_entity| {
+                        cached_entity
+                            .mutations
                             .clone()
                             .into_iter()
-                            .map(|v| PerVerexParams {
-                                position: v.position,
-                                color: figure_set.figure.base_color,
+                            .fold(b, |acc, mutation| {
+                                let set = PersistentDescriptorSet::start(layout.clone())
+                                    .add_buffer(matrices_buff.clone())
+                                    .unwrap()
+                                    .add_buffer(mutation.clone())
+                                    .unwrap()
+                                    .build()
+                                    .unwrap();
+
+                                acc.draw_indexed(
+                                    self.graphics_pipeline.clone(),
+                                    &dynamic_state,
+                                    cached_entity.vert_params.clone(),
+                                    cached_entity.indices_params.clone(),
+                                    set,
+                                    (),
+                                )
+                                .unwrap()
                             })
-                            .collect();
-
-                        let ver_buff = CpuAccessibleBuffer::from_iter(
-                            self.device.clone(),
-                            BufferUsage::all(),
-                            false,
-                            per_vertex_data.into_iter(),
-                        )
-                        .unwrap();
-                        let indices_buff = CpuAccessibleBuffer::from_iter(
-                            self.device.clone(),
-                            BufferUsage::all(),
-                            false,
-                            figure_set.figure.indices.into_iter(),
-                        )
-                        .unwrap();
-
-                        figure_set.mutations.into_iter().fold(b, |acc, mutation| {
-                            let mutation_buff = CpuAccessibleBuffer::from_data(
-                                self.device.clone(),
-                                BufferUsage::all(),
-                                false,
-                                mutation,
-                            )
-                            .unwrap();
-
-                            let set = PersistentDescriptorSet::start(layout.clone())
-                                .add_buffer(matrices_buff.clone())
-                                .unwrap()
-                                .add_buffer(mutation_buff.clone())
-                                .unwrap()
-                                .build()
-                                .unwrap();
-
-                            acc.draw_indexed(
-                                self.graphics_pipeline.clone(),
-                                &dynamic_state,
-                                ver_buff.clone(),
-                                indices_buff.clone(),
-                                set,
-                                (),
-                            )
-                            .unwrap()
-                        })
                     });
 
                 pep.end_render_pass().unwrap();
