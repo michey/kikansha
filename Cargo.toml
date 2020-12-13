@@ -1,0 +1,26 @@
+[package]
+name = "hello_vulkan"
+version = "0.1.0"
+authors = ["michey <aleksandr.mihailov@protonmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "ressha"
+path = "src/ressha/main.rs"
+
+[lib]
+name="kikansha"
+path= "src/kikansha/lib.rs"
+
+
+
+[dependencies]
+vulkano = "0.19"
+vulkano-shaders = "0.19"
+winit = "0.22"
+vulkano-win = "0.19.0"
+nalgebra = "0.23.1"
+nalgebra-glm = "0.9.0"
+
