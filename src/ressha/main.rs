@@ -66,7 +66,7 @@ fn main() {
         camera.clone(),
         vec![
             cubes_set,
-            // tetra_set
+            tetra_set
         ],
     );
 
