@@ -1,12 +1,12 @@
 pub mod cache;
-mod q;
+mod queue;
 
 use crate::debug::fps::Counter;
 use crate::figure::PerVerexParams;
 use crate::scene::camera::ViewAndProject;
 use crate::scene::Scene;
-use crate::state::cache::SceneCache;
-use crate::state::q::QueueFamilyIndices;
+use crate::engine::cache::SceneCache;
+use crate::engine::queue::QueueFamilyIndices;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::SyncSender;
 use std::sync::Mutex;

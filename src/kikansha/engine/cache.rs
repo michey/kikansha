@@ -1,9 +1,9 @@
 use crate::figure::FigureMutation;
 use crate::figure::FigureSet;
 use crate::figure::PerVerexParams;
-use crate::state::BufferUsage;
-use crate::state::Scene;
-use crate::state::ViewAndProject;
+use vulkano::buffer::BufferUsage;
+use crate::scene::Scene;
+use crate::scene::camera::ViewAndProject;
 use std::sync::Arc;
 use vulkano::buffer::CpuAccessibleBuffer;
 use vulkano::device::Device;

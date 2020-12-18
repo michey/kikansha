@@ -8,7 +8,7 @@ use kikansha::figure::FigureMutation;
 use kikansha::figure::FigureSet;
 use kikansha::scene::camera::StickyRotatingCamera;
 use kikansha::scene::Scene;
-use kikansha::state::State;
+use kikansha::engine::State;
 use std::f32::consts::PI;
 use std::sync::Arc;
 use std::sync::Mutex;
