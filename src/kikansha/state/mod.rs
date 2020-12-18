@@ -21,6 +21,7 @@ use vulkano::command_buffer::DynamicState;
 use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
 use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
+use vulkano::format::ClearValue;
 use vulkano::format::Format;
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
 use vulkano::image::AttachmentImage;
@@ -146,7 +147,7 @@ impl State {
         );
 
         let swap_chain_framebuffers =
-            Self::create_framebuffers(&swap_chain_images, &render_pass, &device);
+            Self::create_framebuffers(&swap_chain_images, &swap_chain, &render_pass, &device);
         // let instance = Some(instance_unb);
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
@@ -355,6 +356,7 @@ impl State {
 
         let image_usage = ImageUsage {
             color_attachment: true,
+            transfer_destination: true,
             ..ImageUsage::none()
         };
 
@@ -483,8 +485,14 @@ impl State {
         Arc::new(
             vulkano::single_pass_renderpass!(device.clone(),
                 attachments: {
-                    color: {
+                    intermediary: {
                         load: Clear,
+                        store: DontCare,
+                        format: color_format,
+                        samples: 4,     // This has to match the image definition.
+                    },
+                    color: {
+                        load: DontCare,
                         store: Store,
                         format: color_format,
                         samples: 1,
@@ -493,12 +501,13 @@ impl State {
                         load: Clear,
                         store: DontCare,
                         format: Format::D16Unorm,
-                        samples: 1,
+                        samples: 4,
                     }
                 },
                 pass: {
-                    color: [color],
-                    depth_stencil: {depth}
+                    color: [intermediary],
+                    depth_stencil: {depth},
+                    resolve:[color]
                 }
             )
             .unwrap(),
@@ -542,19 +551,35 @@ impl State {
 
     fn create_framebuffers(
         swap_chain_images: &[Arc<SwapchainImage<Window>>],
+        swap_chain: &Arc<Swapchain<Window>>,
         render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
         device: &Arc<Device>,
     ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
         let dimensions = swap_chain_images[0].dimensions();
 
-        let depth_buffer =
-            AttachmentImage::transient(device.clone(), dimensions, Format::D16Unorm).unwrap();
+        let depth_buffer = AttachmentImage::transient_multisampled(
+            device.clone(),
+            dimensions,
+            4,
+            Format::D16Unorm,
+        )
+        .unwrap();
+
+        let intermediary = AttachmentImage::transient_multisampled(
+            device.clone(),
+            dimensions,
+            4,
+            swap_chain.format(),
+        )
+        .unwrap();
 
         swap_chain_images
             .iter()
             .map(|image| {
                 let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
                     Framebuffer::start(render_pass.clone())
+                        .add(intermediary.clone())
+                        .unwrap()
                         .add(image.clone())
                         .unwrap()
                         .add(depth_buffer.clone())
@@ -600,12 +625,14 @@ impl State {
                 .unwrap();
 
                 let dynamic_state = { self.dynamic_state.lock().unwrap().clone() };
+                let clear_value = vec![
+                    ClearValue::Float([1.0, 1.0, 1.0, 1.0]),
+                    ClearValue::None,
+                    ClearValue::Depth(1.0),
+                ];
+
                 let passes = builder
-                    .begin_render_pass(
-                        framebuffer.clone(),
-                        false,
-                        vec![[1.0, 1.0, 1.0, 1.0].into(), 1f32.into()],
-                    )
+                    .begin_render_pass(framebuffer.clone(), false, clear_value)
                     .unwrap();
 
                 let pep = cached_v
@@ -645,48 +672,6 @@ impl State {
             .collect();
     }
 
-    pub fn update_size_dependent(&mut self) {
-        let images = self.swap_chain_images.clone();
-        let dimensions = images[0].dimensions();
-
-        let viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions: [dimensions[0] as f32, dimensions[1] as f32],
-            depth_range: 0.0..1.0,
-        };
-
-        {
-            let mut guard = self.dynamic_state.lock().unwrap();
-            guard.viewports = Some(vec![viewport]);
-        }
-
-        let depth_buffer =
-            AttachmentImage::transient(self.device.clone(), dimensions, Format::D16Unorm).unwrap();
-        let swap_chain_framebuffers = images
-            .iter()
-            .map(|image| {
-                Arc::new(
-                    Framebuffer::start(self.render_pass.clone())
-                        .add(image.clone())
-                        .unwrap()
-                        .add(depth_buffer.clone())
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                ) as Arc<dyn FramebufferAbstract + Send + Sync>
-            })
-            .collect::<Vec<_>>();
-        self.swap_chain_framebuffers = swap_chain_framebuffers;
-
-        let new_pipeline = Self::create_graphic_pipeline(
-            &self.device,
-            dimensions,
-            &self.render_pass,
-            &self.dynamic_state,
-        );
-        self.graphics_pipeline = new_pipeline;
-    }
-
     fn recreate_swap_chain<T: ViewAndProject + Sized>(&mut self, scene: &Scene<T>) {
         let (swap_chain, images) = Self::create_swap_chain(
             &self.instance,
@@ -707,8 +692,13 @@ impl State {
             &self.render_pass,
             &self.dynamic_state,
         );
-        self.swap_chain_framebuffers =
-            Self::create_framebuffers(&self.swap_chain_images, &self.render_pass, &self.device);
+
+        self.swap_chain_framebuffers = Self::create_framebuffers(
+            &self.swap_chain_images,
+            &self.swap_chain,
+            &self.render_pass,
+            &self.device,
+        );
         self.create_command_buffers(scene);
     }
 
@@ -761,7 +751,6 @@ impl State {
                         let dimensions: [u32; 2] = state.surface.window().inner_size().into();
                         locked_camera.update_ar(dimensions[0] as f32 / dimensions[1] as f32);
                     }
-                    // state.update_size_dependent();
                     state.recreate_swap_chain(scene);
                     state.recreate_swap_chain = false;
                 }
