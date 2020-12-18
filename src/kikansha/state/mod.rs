@@ -92,6 +92,7 @@ const VALIDATION_LAYERS: &[&str] = &[
 
 pub struct State {
     instance: Arc<Instance>,
+    #[allow(dead_code)]
     debug_callback: Option<DebugCallback>,
     physical_device_index: usize,
     pub device: Arc<Device>,
@@ -167,7 +168,7 @@ impl State {
             dynamic_state,
             previous_frame_end,
             recreate_swap_chain: false,
-            scene_cache: SceneCache::new(),
+            scene_cache: SceneCache::default(),
         };
         app.create_command_buffers(scene);
         app
@@ -429,7 +430,7 @@ impl State {
 
     fn choose_swap_extent(capabilities: &Capabilities) -> [u32; 2] {
         if let Some(current_extent) = capabilities.current_extent {
-            return current_extent;
+            current_extent
         } else {
             let mut actual_extent = [WIDTH, HEIGHT];
             actual_extent[0] = capabilities.min_image_extent[0]
@@ -571,15 +572,13 @@ impl State {
 
         let matrices = {
             let locked_camera = scene.camera.lock().unwrap();
-            locked_camera.get_matrices().clone()
+            locked_camera.get_matrices()
         };
         let cached_v = self.scene_cache.get_cache(scene, self.device.clone());
-        
         self.command_buffers = self
             .swap_chain_framebuffers
             .iter()
             .map(|framebuffer| {
-                
                 let layout = self
                     .graphics_pipeline
                     .layout()
@@ -622,7 +621,7 @@ impl State {
                                 let set = PersistentDescriptorSet::start(layout.clone())
                                     .add_buffer(matrices_buff.clone())
                                     .unwrap()
-                                    .add_buffer(mutation.clone())
+                                    .add_buffer(mutation)
                                     .unwrap()
                                     .build()
                                     .unwrap();
@@ -744,13 +743,10 @@ impl State {
                 state.recreate_swap_chain = true;
             }
             Event::RedrawEventsCleared => {
-                match quit_recv.try_recv() {
-                    Ok(flag) => {
-                        if flag {
-                            *control_flow = ControlFlow::Exit
-                        }
+                if let Ok(flag) = quit_recv.try_recv() {
+                    if flag {
+                        *control_flow = ControlFlow::Exit
                     }
-                    _ => (),
                 }
 
                 state
@@ -800,10 +796,9 @@ impl State {
                     )
                     .then_signal_fence_and_flush();
 
-                match counter.tick() {
-                    Some(v) => println!("{:?} fps", v),
-                    None => (),
-                };
+                if let Some(v) = counter.tick() {
+                    println!("{:?} fps", v)
+                }
 
                 match future {
                     Ok(future) => {

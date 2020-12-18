@@ -10,7 +10,7 @@ impl Counter {
     pub fn new(report_every: u8) -> Self {
         Self {
             last_time: SystemTime::now(),
-            report_every: report_every,
+            report_every,
             counter: 0,
         }
     }

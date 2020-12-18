@@ -1,12 +1,9 @@
 extern crate vulkano;
 
-
-pub mod scene;
-pub mod state;
 pub mod debug;
 pub mod figure;
-
-
+pub mod scene;
+pub mod state;
 
 // extern crate vulkano;
 // extern crate vulkano_win;

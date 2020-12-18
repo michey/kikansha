@@ -40,7 +40,7 @@ pub struct SceneCache {
 }
 
 impl SceneCache {
-    pub fn new() -> Self {
+    pub fn default() -> Self {
         SceneCache {
             cache_id: 0,
             state: None,
@@ -69,9 +69,9 @@ impl SceneCache {
         }
     }
 
-    fn prepare_cache(figures: &Vec<FigureSet>, device: Arc<Device>) -> CachedEntities {
+    fn prepare_cache(figures: &[FigureSet], device: Arc<Device>) -> CachedEntities {
         let entities = figures
-            .into_iter()
+            .iter()
             .map(|figure_set| {
                 let per_vertex_data: Vec<PerVerexParams> = figure_set
                     .figure

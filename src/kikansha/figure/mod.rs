@@ -91,12 +91,16 @@ impl Figure {
 
         let color = [0.0, 0.0, 1.0, 1.0];
 
-        let a = Vertex::new([-unit, unit, unit]);
-        let b = Vertex::new([unit, -unit, unit]);
-        let c = Vertex::new([unit, unit, -unit]);
-        let d = Vertex::new([-unit, -unit, -unit]);
+        let a_point = Vertex::new([-unit, unit, unit]);
+        let b_point = Vertex::new([unit, -unit, unit]);
+        let c_point = Vertex::new([unit, unit, -unit]);
+        let d_point = Vertex::new([-unit, -unit, -unit]);
 
-        Figure::new(vec![a, b, c, d], vec![0, 1, 2, 0, 1, 3, 0, 3, 2], color)
+        Figure::new(
+            vec![a_point, b_point, c_point, d_point],
+            vec![0, 1, 2, 0, 1, 3, 0, 3, 2],
+            color,
+        )
     }
 
     pub fn unit_cube() -> Self {
@@ -105,16 +109,16 @@ impl Figure {
         let color = [1.0, 0.0, 0.0, 1.0];
 
         //fron face dots. ccw from top left
-        let a = Vertex::new([unit, unit, -unit]);
-        let b = Vertex::new([unit, unit, unit]);
-        let c = Vertex::new([unit, -unit, unit]);
-        let d = Vertex::new([unit, -unit, -unit]);
+        let a_point = Vertex::new([unit, unit, -unit]);
+        let b_point = Vertex::new([unit, unit, unit]);
+        let c_point = Vertex::new([unit, -unit, unit]);
+        let d_point = Vertex::new([unit, -unit, -unit]);
 
         //rear face dots. ccw from top left
-        let e = Vertex::new([-unit, unit, -unit]);
-        let f = Vertex::new([-unit, unit, unit]);
-        let j = Vertex::new([-unit, -unit, unit]);
-        let h = Vertex::new([-unit, -unit, -unit]);
+        let e_point = Vertex::new([-unit, unit, -unit]);
+        let f_point = Vertex::new([-unit, unit, unit]);
+        let j_point = Vertex::new([-unit, -unit, unit]);
+        let h_point = Vertex::new([-unit, -unit, -unit]);
 
         // a, b, c,
         // a, d, c,
@@ -127,7 +131,9 @@ impl Figure {
 
         Figure::new(
             //   0, 1, 2, 3, 4, 5, 6, 7
-            vec![a, b, c, d, e, f, j, h],
+            vec![
+                a_point, b_point, c_point, d_point, e_point, f_point, j_point, h_point,
+            ],
             vec![
                 0, 1, 2, 0, 3, 2, 4, 5, 6, 4, 7, 6, 1, 2, 5, 5, 6, 2, 0, 3, 4, 4, 3, 7,
             ],

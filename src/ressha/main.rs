@@ -62,13 +62,7 @@ fn main() {
 
     let tetra_set = FigureSet::new(Figure::unit_tetrahedron(), tetra_mutations);
 
-    let scene = Scene::create(
-        camera.clone(),
-        vec![
-            cubes_set,
-            tetra_set
-        ],
-    );
+    let scene = Scene::create(camera.clone(), vec![cubes_set, tetra_set]);
 
     let sleep = Duration::from_millis(10);
 

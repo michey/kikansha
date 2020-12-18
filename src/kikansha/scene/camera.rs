@@ -16,9 +16,9 @@ pub trait ViewAndProject {
 
     fn proj_m(&self) -> Matrix4<f32>;
 
-    fn update_ar(&mut self, aspect_ratio: f32) -> ();
+    fn update_ar(&mut self, aspect_ratio: f32);
 
-    fn update_fov(&mut self, fov: f32) -> ();
+    fn update_fov(&mut self, fov: f32);
 
     fn get_matrices(&self) -> Matrices {
         let p = self.proj_m();
@@ -41,8 +41,7 @@ fn calcullate_view_m(eye: Point3<f32>, dest: Point3<f32>) -> Matrix4<f32> {
 
     let center = Vector3::new(dest[0], dest[1], dest[2]);
     let eye_v = Vector3::new(eye[0], eye[1], eye[2]);
-    let veiw_m = glm::look_at(&eye_v, &center, &up);
-    veiw_m
+    glm::look_at(&eye_v, &center, &up)
 }
 
 fn calcullate_proj_m(
