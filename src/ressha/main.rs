@@ -3,12 +3,12 @@ extern crate vulkano_shaders;
 extern crate vulkano_win;
 extern crate winit;
 
+use kikansha::engine::State;
 use kikansha::figure::Figure;
 use kikansha::figure::FigureMutation;
 use kikansha::figure::FigureSet;
 use kikansha::scene::camera::StickyRotatingCamera;
 use kikansha::scene::Scene;
-use kikansha::engine::State;
 use std::f32::consts::PI;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -29,12 +29,16 @@ impl Drop for QuitOnScopeExit<'_> {
 }
 
 fn main() {
-    let yaw = 0.0;
-    let pitch = PI / 4.0;
-    let yaw_loop = Duration::from_secs(10 as u64);
-    let yaw_step = (PI * 2.0) / yaw_loop.as_millis() as f32;
+    let mut yaw = 0.0;
+    let mut pitch = PI / 4.0;
+    let yaw_loop = Duration::from_secs(6 as u64);
+    let mut yaw_step = (PI * 2.0) / yaw_loop.as_millis() as f32;
+
+    let pitch_loop = Duration::from_secs(10 as u64);
+    let mut pitch_step = PI / pitch_loop.as_millis() as f32;
+
     let mut init_ts = SystemTime::now();
-    let p_camera = StickyRotatingCamera::new(3.0, yaw, pitch);
+    let p_camera = StickyRotatingCamera::new(3.5, yaw, pitch);
     let camera = Arc::new(Mutex::new(p_camera));
 
     let cube_mutations = vec![
@@ -62,7 +66,7 @@ fn main() {
 
     let tetra_set = FigureSet::new(Figure::unit_tetrahedron(), tetra_mutations);
 
-    let scene = Scene::create(camera.clone(), vec![cubes_set, tetra_set]);
+    let scene = Scene::create(camera.clone(), vec![cubes_set, tetra_set], vec![]);
 
     let sleep = Duration::from_millis(10);
 
@@ -79,13 +83,37 @@ fn main() {
         loop {
             let current_ts = SystemTime::now();
             let elapsed = current_ts.duration_since(init_ts).unwrap();
-            if elapsed >= yaw_loop {
-                init_ts = SystemTime::now();
+            init_ts = current_ts;
+
+            let new_yaw = yaw + (elapsed.as_millis() as f32 * yaw_step);
+            yaw = new_yaw;
+            if new_yaw >= (PI * 2.0) {
+                yaw = PI * 2.0;
+                yaw_step = -yaw_step;
+            }
+            if new_yaw <= 0.0 {
+                yaw = 0.0;
+                yaw_step = -yaw_step;
             }
 
-            let new_yaw = elapsed.as_millis() as f32 * yaw_step;
             {
-                camera.lock().unwrap().set_yaw(new_yaw);
+                camera.lock().unwrap().set_yaw(yaw);
+            }
+
+            let new_pitch = pitch + (elapsed.as_millis() as f32 * pitch_step);
+            pitch = new_pitch;
+            if new_pitch >= (PI / 2.0) {
+                pitch = PI / 2.0 - pitch_step.abs();
+                pitch_step = -pitch_step
+            }
+
+            if new_pitch <= -(PI / 2.0) {
+                pitch = -(PI / 2.0) + pitch_step.abs();
+                pitch_step = -pitch_step
+            }
+
+            {
+                camera.lock().unwrap().set_pitch(pitch);
             }
 
             std::thread::sleep(sleep);

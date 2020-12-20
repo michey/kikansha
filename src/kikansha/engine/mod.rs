@@ -2,38 +2,30 @@ pub mod cache;
 mod queue;
 
 use crate::debug::fps::Counter;
-use crate::figure::PerVerexParams;
-use crate::scene::camera::ViewAndProject;
-use crate::scene::Scene;
 use crate::engine::cache::SceneCache;
 use crate::engine::queue::QueueFamilyIndices;
+use crate::frame::geometry::TriangleDrawSystem;
+use crate::frame::system::FrameSystem;
+use crate::frame::Pass;
+use crate::scene::camera::ViewAndProject;
+use crate::scene::Scene;
+use nalgebra::Vector3;
+use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::SyncSender;
-use std::sync::Mutex;
-
-use std::collections::HashSet;
 use std::sync::Arc;
-use vulkano::buffer::BufferUsage;
-use vulkano::buffer::CpuAccessibleBuffer;
-use vulkano::command_buffer::AutoCommandBuffer;
-use vulkano::command_buffer::AutoCommandBufferBuilder;
+use std::sync::Mutex;
 use vulkano::command_buffer::DynamicState;
-use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
-use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::device::{Device, DeviceExtensions, Features, Queue};
-use vulkano::format::ClearValue;
 use vulkano::format::Format;
-use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
-use vulkano::image::AttachmentImage;
 use vulkano::image::{ImageUsage, SwapchainImage};
 use vulkano::instance::{
     debug::DebugCallback, debug::MessageSeverity, debug::MessageType, layers_list, ApplicationInfo,
     Instance, InstanceExtensions, PhysicalDevice, Version,
 };
-use vulkano::pipeline::vertex::SingleBufferDefinition;
-use vulkano::pipeline::{viewport::Viewport, GraphicsPipeline};
+use vulkano::pipeline::viewport::Viewport;
 use vulkano::swapchain;
-use vulkano::swapchain::{AcquireError, SwapchainCreationError};
+use vulkano::swapchain::AcquireError;
 use vulkano::swapchain::{
     Capabilities, ColorSpace, FullscreenExclusive, PresentMode, SupportedPresentModes, Surface,
     Swapchain,
@@ -52,34 +44,15 @@ use winit::window::WindowBuilder;
 const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 720;
 
-mod vertex_shader {
-    vulkano_shaders::shader! {
-        ty: "vertex",
-        path: "src/ressha/triangle.vert"
-    }
-}
-
-mod fragment_shader {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        path: "src/ressha/triangle.frag"
-    }
-}
-
 /// Required device extensions
 fn device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
         khr_storage_buffer_storage_class: true,
+        // ext_debug_utils: true,
         ..DeviceExtensions::none()
     }
 }
-
-type ConcreteGraphicsPipeline = GraphicsPipeline<
-    SingleBufferDefinition<PerVerexParams>,
-    Box<dyn PipelineLayoutAbstract + Send + Sync + 'static>,
-    Arc<dyn RenderPassAbstract + Send + Sync + 'static>,
->;
 
 #[cfg(debug_assertions)]
 const ENABLE_VALIDATION_LAYERS: bool = true;
@@ -102,27 +75,25 @@ pub struct State {
     pub surface: Arc<Surface<Window>>,
     pub swap_chain: Arc<Swapchain<Window>>,
     pub swap_chain_images: Vec<Arc<SwapchainImage<Window>>>,
-    pub render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    graphics_pipeline: Arc<ConcreteGraphicsPipeline>,
-    swap_chain_framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    command_buffers: Vec<Arc<AutoCommandBuffer>>,
     pub dynamic_state: Mutex<DynamicState>,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
     scene_cache: SceneCache,
+    pub frame_system: FrameSystem,
+    pub triangle_draw_system: TriangleDrawSystem,
 }
 
 impl State {
-    fn init<T: ViewAndProject + Sized>(
-        scene: &Scene<T>,
-        surface: Arc<Surface<Window>>,
-        instance: Arc<Instance>,
-    ) -> Self {
+    fn init(surface: Arc<Surface<Window>>, instance: Arc<Instance>) -> Self {
         let debug_callback = Self::setup_debug_callback(&instance);
 
         let physical_device_index = Self::pick_physical_device(&instance, &surface);
         let (device, graphics_queue, present_queue) =
             Self::create_logical_device(physical_device_index, &instance, &surface);
+        let dynamic_state_raw = DynamicState::none();
+
+        let dynamic_state = Mutex::new(dynamic_state_raw);
+
         let (swap_chain, swap_chain_images) = Self::create_swap_chain(
             &instance,
             &surface,
@@ -131,28 +102,19 @@ impl State {
             &graphics_queue,
             &present_queue,
             None,
-        );
-
-        let render_pass = Self::create_render_pass(&device, swap_chain.format());
-
-        let dynamic_state_raw = DynamicState::none();
-
-        let dynamic_state = Mutex::new(dynamic_state_raw);
-
-        let graphics_pipeline = Self::create_graphic_pipeline(
-            &device,
-            swap_chain.dimensions(),
-            &render_pass,
             &dynamic_state,
         );
 
-        let swap_chain_framebuffers =
-            Self::create_framebuffers(&swap_chain_images, &swap_chain, &render_pass, &device);
-        // let instance = Some(instance_unb);
+        let dimensions = swap_chain_images[0].dimensions();
+        let frame_system =
+            FrameSystem::new(graphics_queue.clone(), swap_chain.format(), dimensions);
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
 
-        let mut app = State {
+        let triangle_draw_system =
+            TriangleDrawSystem::new(graphics_queue.clone(), frame_system.deferred_subpass());
+
+        State {
             instance,
             debug_callback,
             physical_device_index,
@@ -162,30 +124,13 @@ impl State {
             surface,
             swap_chain,
             swap_chain_images,
-            render_pass,
-            graphics_pipeline,
-            swap_chain_framebuffers,
-            command_buffers: vec![],
             dynamic_state,
             previous_frame_end,
             recreate_swap_chain: false,
             scene_cache: SceneCache::default(),
-        };
-        app.create_command_buffers(scene);
-        app
-    }
-
-    pub fn update_swapchain(&mut self) {
-        let dimensions: [u32; 2] = self.surface.window().inner_size().into();
-
-        let (new_swapchain, _new_images) =
-            match self.swap_chain.recreate_with_dimensions(dimensions) {
-                Ok(r) => r,
-                Err(SwapchainCreationError::UnsupportedDimensions) => return,
-                Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
-            };
-
-        self.swap_chain = new_swapchain;
+            frame_system,
+            triangle_draw_system,
+        }
     }
 
     fn init_loop(instance: &Arc<Instance>) -> (EventLoop<()>, Arc<Surface<Window>>) {
@@ -331,6 +276,7 @@ impl State {
         graphics_queue: &Arc<Queue>,
         present_queue: &Arc<Queue>,
         old_swapchain: Option<Arc<Swapchain<Window>>>,
+        dynamic_state: &Mutex<DynamicState>,
     ) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
         let physical_device = PhysicalDevice::from_index(&instance, physical_device_index).unwrap();
         let capabilities = surface
@@ -356,7 +302,6 @@ impl State {
 
         let image_usage = ImageUsage {
             color_attachment: true,
-            transfer_destination: true,
             ..ImageUsage::none()
         };
 
@@ -368,7 +313,7 @@ impl State {
             graphics_queue.into()
         };
 
-        match old_swapchain {
+        let (swap_chain, images) = match old_swapchain {
             Some(old) => Swapchain::with_old_swapchain(
                 device.clone(),
                 surface.clone(),
@@ -404,7 +349,20 @@ impl State {
                 ColorSpace::SrgbNonLinear,
             )
             .expect("Failed to create swap chain"),
-        }
+        };
+
+        let swap_chain_extent = swap_chain.dimensions();
+        let dimensions = [swap_chain_extent[0] as f32, swap_chain_extent[1] as f32];
+        let viewport = Viewport {
+            origin: [0.0, 0.0],
+            dimensions,
+            depth_range: 0.0..1.0,
+        };
+        {
+            dynamic_state.lock().unwrap().viewports = Some(vec![viewport]);
+        };
+
+        (swap_chain, images)
     }
 
     fn choose_swap_surface_format(
@@ -412,12 +370,14 @@ impl State {
     ) -> (Format, ColorSpace) {
         // NOTE: the 'preferred format' mentioned in the tutorial doesn't seem to be
         // queryable in Vulkano (no VK_FORMAT_UNDEFINED enum)
-        *available_formats
-            .iter()
-            .find(|(format, color_space)| {
-                *format == Format::B8G8R8A8Unorm && *color_space == ColorSpace::SrgbNonLinear
-            })
-            .unwrap_or_else(|| &available_formats[0])
+        // *available_formats
+        // .iter()
+        // .find(|(format, color_space)| {
+        //     *format == Format::R32G32B32A32Sfloat && *color_space == ColorSpace::SrgbNonLinear
+        // })
+        // .unwrap_or_else(||
+        available_formats[0]
+        // )
     }
 
     fn choose_swap_present_mode(available_present_modes: SupportedPresentModes) -> PresentMode {
@@ -477,202 +437,7 @@ impl State {
         })
         .ok()
     }
-
-    fn create_render_pass(
-        device: &Arc<Device>,
-        color_format: Format,
-    ) -> Arc<dyn RenderPassAbstract + Send + Sync> {
-        Arc::new(
-            vulkano::single_pass_renderpass!(device.clone(),
-                attachments: {
-                    intermediary: {
-                        load: Clear,
-                        store: DontCare,
-                        format: color_format,
-                        samples: 4,     // This has to match the image definition.
-                    },
-                    color: {
-                        load: DontCare,
-                        store: Store,
-                        format: color_format,
-                        samples: 1,
-                    },
-                    depth: {
-                        load: Clear,
-                        store: DontCare,
-                        format: Format::D16Unorm,
-                        samples: 4,
-                    }
-                },
-                pass: {
-                    color: [intermediary],
-                    depth_stencil: {depth},
-                    resolve:[color]
-                }
-            )
-            .unwrap(),
-        )
-    }
-
-    fn create_graphic_pipeline(
-        device: &Arc<Device>,
-        swap_chain_extent: [u32; 2],
-        render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
-        dynamic_state: &Mutex<DynamicState>,
-    ) -> Arc<ConcreteGraphicsPipeline> {
-        let vert_shader_module = vertex_shader::Shader::load(device.clone())
-            .expect("failed to create vertex shader module!");
-        let frag_shader_module = fragment_shader::Shader::load(device.clone())
-            .expect("failed to create fragment shader module!");
-
-        let dimensions = [swap_chain_extent[0] as f32, swap_chain_extent[1] as f32];
-        let viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions,
-            depth_range: 0.0..1.0,
-        };
-        {
-            dynamic_state.lock().unwrap().viewports = Some(vec![viewport]);
-        };
-
-        Arc::new(
-            GraphicsPipeline::start()
-                .vertex_input_single_buffer()
-                .vertex_shader(vert_shader_module.main_entry_point(), ())
-                .triangle_list()
-                .viewports_dynamic_scissors_irrelevant(1)
-                .fragment_shader(frag_shader_module.main_entry_point(), ())
-                .depth_stencil_simple_depth()
-                .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-                .build(device.clone())
-                .unwrap(),
-        )
-    }
-
-    fn create_framebuffers(
-        swap_chain_images: &[Arc<SwapchainImage<Window>>],
-        swap_chain: &Arc<Swapchain<Window>>,
-        render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
-        device: &Arc<Device>,
-    ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
-        let dimensions = swap_chain_images[0].dimensions();
-
-        let depth_buffer = AttachmentImage::transient_multisampled(
-            device.clone(),
-            dimensions,
-            4,
-            Format::D16Unorm,
-        )
-        .unwrap();
-
-        let intermediary = AttachmentImage::transient_multisampled(
-            device.clone(),
-            dimensions,
-            4,
-            swap_chain.format(),
-        )
-        .unwrap();
-
-        swap_chain_images
-            .iter()
-            .map(|image| {
-                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(
-                    Framebuffer::start(render_pass.clone())
-                        .add(intermediary.clone())
-                        .unwrap()
-                        .add(image.clone())
-                        .unwrap()
-                        .add(depth_buffer.clone())
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                );
-                fba
-            })
-            .collect::<Vec<_>>()
-    }
-
-    pub fn create_command_buffers<T: ViewAndProject + Sized>(&mut self, scene: &Scene<T>) {
-        let queue_family = self.graphics_queue.family();
-
-        let matrices = {
-            let locked_camera = scene.camera.lock().unwrap();
-            locked_camera.get_matrices()
-        };
-        let cached_v = self.scene_cache.get_cache(scene, self.device.clone());
-        self.command_buffers = self
-            .swap_chain_framebuffers
-            .iter()
-            .map(|framebuffer| {
-                let layout = self
-                    .graphics_pipeline
-                    .layout()
-                    .descriptor_set_layout(0)
-                    .unwrap();
-
-                let matrices_buff = CpuAccessibleBuffer::from_data(
-                    self.device.clone(),
-                    BufferUsage::all(),
-                    false,
-                    matrices,
-                )
-                .unwrap();
-
-                let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
-                    self.device.clone(),
-                    queue_family,
-                )
-                .unwrap();
-
-                let dynamic_state = { self.dynamic_state.lock().unwrap().clone() };
-                let clear_value = vec![
-                    ClearValue::Float([1.0, 1.0, 1.0, 1.0]),
-                    ClearValue::None,
-                    ClearValue::Depth(1.0),
-                ];
-
-                let passes = builder
-                    .begin_render_pass(framebuffer.clone(), false, clear_value)
-                    .unwrap();
-
-                let pep = cached_v
-                    .entities
-                    .clone()
-                    .into_iter()
-                    .fold(passes, |b, cached_entity| {
-                        cached_entity
-                            .mutations
-                            .clone()
-                            .into_iter()
-                            .fold(b, |acc, mutation| {
-                                let set = PersistentDescriptorSet::start(layout.clone())
-                                    .add_buffer(matrices_buff.clone())
-                                    .unwrap()
-                                    .add_buffer(mutation)
-                                    .unwrap()
-                                    .build()
-                                    .unwrap();
-
-                                acc.draw_indexed(
-                                    self.graphics_pipeline.clone(),
-                                    &dynamic_state,
-                                    cached_entity.vert_params.clone(),
-                                    cached_entity.indices_params.clone(),
-                                    set,
-                                    (),
-                                )
-                                .unwrap()
-                            })
-                    });
-
-                pep.end_render_pass().unwrap();
-
-                Arc::new(builder.build().unwrap())
-            })
-            .collect();
-    }
-
-    fn recreate_swap_chain<T: ViewAndProject + Sized>(&mut self, scene: &Scene<T>) {
+    fn recreate_swap_chain(&mut self) {
         let (swap_chain, images) = Self::create_swap_chain(
             &self.instance,
             &self.surface,
@@ -681,25 +446,15 @@ impl State {
             &self.graphics_queue,
             &self.present_queue,
             Some(self.swap_chain.clone()),
-        );
-        self.swap_chain = swap_chain;
-        self.swap_chain_images = images;
-
-        self.render_pass = Self::create_render_pass(&self.device, self.swap_chain.format());
-        self.graphics_pipeline = Self::create_graphic_pipeline(
-            &self.device,
-            self.swap_chain.dimensions(),
-            &self.render_pass,
             &self.dynamic_state,
         );
 
-        self.swap_chain_framebuffers = Self::create_framebuffers(
-            &self.swap_chain_images,
-            &self.swap_chain,
-            &self.render_pass,
-            &self.device,
-        );
-        self.create_command_buffers(scene);
+        let dimensions = images[0].dimensions();
+
+        self.frame_system
+            .recreate_render_pass(swap_chain.format(), dimensions);
+        self.swap_chain = swap_chain;
+        self.swap_chain_images = images;
     }
 
     pub fn run_loop<T: ViewAndProject + Sized>(
@@ -709,7 +464,7 @@ impl State {
     ) {
         let instance_unb = Self::create_instance();
         let (mut event_loop, surface) = Self::init_loop(&instance_unb);
-        let mut state = Self::init(scene, surface, instance_unb);
+        let mut state = Self::init(surface, instance_unb);
 
         let mut counter = Counter::new(1);
 
@@ -751,7 +506,7 @@ impl State {
                         let dimensions: [u32; 2] = state.surface.window().inner_size().into();
                         locked_camera.update_ar(dimensions[0] as f32 / dimensions[1] as f32);
                     }
-                    state.recreate_swap_chain(scene);
+                    state.recreate_swap_chain();
                     state.recreate_swap_chain = false;
                 }
 
@@ -768,15 +523,53 @@ impl State {
                     state.recreate_swap_chain = true;
                 }
 
-                state.create_command_buffers(&scene);
-
-                let command_buffer = state.command_buffers[image_num].clone();
                 let future = state
                     .previous_frame_end
                     .take()
                     .unwrap()
-                    .join(acquire_future)
-                    .then_execute(state.graphics_queue.clone(), command_buffer)
+                    .join(acquire_future);
+
+                let mut after_future = None;
+
+                let matrices = {
+                    let locked_camera = scene.camera.lock().unwrap();
+                    locked_camera.get_matrices()
+                };
+
+                let dynamic_state = { state.dynamic_state.lock().unwrap().clone() };
+                let scene = state.scene_cache.get_cache(scene, state.device.clone());
+
+                let mut frame = state.frame_system.frame(
+                    future,
+                    state.swap_chain_images[image_num].clone(),
+                    matrices.clone(),
+                    scene.clone(),
+                    dynamic_state.clone(),
+                );
+
+                while let Some(pass) = frame.next_pass() {
+                    match pass {
+                        Pass::Deferred(mut draw_pass) => {
+                            let cb =
+                                state
+                                    .triangle_draw_system
+                                    .draw(&matrices, &scene, &dynamic_state);
+                            draw_pass.execute(cb);
+                        }
+                        Pass::Lighting(mut lighting) => {
+                            lighting.ambient_light([0.9, 0.3, 0.3]);
+                            lighting
+                                .directional_light(Vector3::new(0.2, -0.1, -0.7), [0.6, 0.6, 0.6]);
+                            lighting.point_light(Vector3::new(0.5, -0.5, -0.1), [1.0, 0.0, 0.0]);
+                            lighting.point_light(Vector3::new(-0.9, 0.2, -0.15), [0.0, 1.0, 0.0]);
+                            lighting.point_light(Vector3::new(0.0, 0.5, -0.05), [0.0, 0.0, 1.0]);
+                        }
+                        Pass::Finished(af) => {
+                            after_future = Some(af);
+                        }
+                    }
+                }
+                let future = after_future
                     .unwrap()
                     .then_swapchain_present(
                         state.graphics_queue.clone(),

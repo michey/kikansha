@@ -1,7 +1,7 @@
 #[derive(Default, Debug, Clone, Copy)]
 pub struct PerVerexParams {
     pub position: [f32; 3],
-    pub color: [f32; 4],
+    pub color: [f32; 3],
 }
 
 vulkano::impl_vertex!(PerVerexParams, position, color);
@@ -24,13 +24,13 @@ pub struct VertexParams {
     position: [f32; 3],
     offset: [f32; 3],
     scale: f32,
-    color: [f32; 4],
+    color: [f32; 3],
 }
 
 vulkano::impl_vertex!(VertexParams, position, offset, scale, color);
 
 impl VertexParams {
-    pub fn new(vertex: Vertex, mutation: FigureMutation, base_color: [f32; 4]) -> Self {
+    pub fn new(vertex: Vertex, mutation: FigureMutation, base_color: [f32; 3]) -> Self {
         Self {
             position: vertex.position,
             offset: mutation.position_offset,
@@ -73,11 +73,11 @@ impl Vertex {
 pub struct Figure {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
-    pub base_color: [f32; 4],
+    pub base_color: [f32; 3],
 }
 
 impl Figure {
-    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>, base_color: [f32; 4]) -> Self {
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>, base_color: [f32; 3]) -> Self {
         Self {
             vertices,
             indices,
@@ -89,7 +89,7 @@ impl Figure {
     pub fn unit_tetrahedron() -> Self {
         let unit = 0.25;
 
-        let color = [0.0, 0.0, 1.0, 1.0];
+        let color = [1.0, 1.0, 1.0];
 
         let a_point = Vertex::new([-unit, unit, unit]);
         let b_point = Vertex::new([unit, -unit, unit]);
@@ -106,7 +106,7 @@ impl Figure {
     pub fn unit_cube() -> Self {
         let unit = 0.25;
 
-        let color = [1.0, 0.0, 0.0, 1.0];
+        let color = [1.0, 1.0, 1.0];
 
         //fron face dots. ccw from top left
         let a_point = Vertex::new([unit, unit, -unit]);
@@ -130,12 +130,13 @@ impl Figure {
         // e, d, h,
 
         Figure::new(
-            //   0, 1, 2, 3, 4, 5, 6, 7
+            //   0,      1,       2,       3,       4,       5,       6,       7
             vec![
                 a_point, b_point, c_point, d_point, e_point, f_point, j_point, h_point,
             ],
             vec![
-                0, 1, 2, 0, 3, 2, 4, 5, 6, 4, 7, 6, 1, 2, 5, 5, 6, 2, 0, 3, 4, 4, 3, 7,
+                0, 1, 2, 0, 3, 2, 4, 5, 6, 4, 7, 6, 1, 2, 5, 5, 6, 2, 0, 3, 4, 4, 3, 7, 0, 1, 4, 4,
+                5, 1, 2, 3, 7, 7, 6, 2,
             ],
             color,
         )

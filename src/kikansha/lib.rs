@@ -4,3 +4,4 @@ pub mod debug;
 pub mod figure;
 pub mod scene;
 pub mod engine;
+pub mod frame;

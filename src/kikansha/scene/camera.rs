@@ -6,9 +6,28 @@ use nalgebra::Point3;
 use nalgebra::Vector3;
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct Matrices {
-    projection_matrix: [f32; 16],
-    view_matrix: [f32; 16],
+pub struct CameraMatrices {
+    pub projection_matrix: [f32; 16],
+    pub view_matrix: [f32; 16],
+}
+
+impl CameraMatrices {
+    fn allign(m: [f32; 16]) -> [[f32; 4]; 4] {
+        [
+            [m[0], m[1], m[2], m[3]],
+            [m[4], m[5], m[6], m[7]],
+            [m[8], m[9], m[10], m[11]],
+            [m[12], m[13], m[14], m[15]],
+        ]
+    }
+
+    pub fn alligned_projection_matrix(self) -> [[f32; 4]; 4] {
+        Self::allign(self.projection_matrix)
+    }
+
+    pub fn alligned_view_matrix(self) -> [[f32; 4]; 4] {
+        Self::allign(self.view_matrix)
+    }
 }
 
 pub trait ViewAndProject {
@@ -20,10 +39,10 @@ pub trait ViewAndProject {
 
     fn update_fov(&mut self, fov: f32);
 
-    fn get_matrices(&self) -> Matrices {
+    fn get_matrices(&self) -> CameraMatrices {
         let p = self.proj_m();
         let v = self.view_m();
-        Matrices {
+        CameraMatrices {
             projection_matrix: [
                 p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12],
                 p[13], p[14], p[15],
@@ -173,6 +192,13 @@ impl StickyRotatingCamera {
         let view_m: Matrix4<f32> = calcullate_view_m(eye, Point3::new(0.0, 0.0, 0.0));
         self.view_m = view_m;
         self.yaw = yaw;
+    }
+
+    pub fn set_pitch(&mut self, pitch: f32) {
+        let eye = Self::calculate_eye(self.distance, self.yaw, pitch);
+        let view_m: Matrix4<f32> = calcullate_view_m(eye, Point3::new(0.0, 0.0, 0.0));
+        self.view_m = view_m;
+        self.pitch = pitch;
     }
 }
 
