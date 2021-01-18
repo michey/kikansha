@@ -48,6 +48,14 @@ pub struct MeshPoint {
 }
 
 impl MeshPoint {
+    pub fn new(vert: [f32; 3], color: [f32; 3], normal: [f32; 3]) -> Self {
+        MeshPoint {
+            vert: Point3::new(vert[0], vert[1], vert[2]),
+            color: Vec3::new(color[0],color[1],color[2]),
+            normal: Vec3::new(normal[0],normal[1],normal[2])
+        }
+    }
+
     pub fn to_vert(&self) -> PerVerexParams {
         let p = self;
         PerVerexParams {
@@ -243,12 +251,15 @@ impl Figure {
                 .triangles
                 .into_iter()
                 .flat_map(|triangle| {
-                    triangle.vertices.iter().map(|vert| MeshPoint {
-                        vert: Point3::new(vert[0], vert[1], vert[2]),
-                        color: triangle.color[0],
-                        normal: triangle.normale,
-                    })
-                    .collect::<Vec<MeshPoint>>()
+                    triangle
+                        .vertices
+                        .iter()
+                        .map(|vert| MeshPoint {
+                            vert: Point3::new(vert[0], vert[1], vert[2]),
+                            color: triangle.color[0],
+                            normal: triangle.normale,
+                        })
+                        .collect::<Vec<MeshPoint>>()
                 })
                 .collect(),
         })

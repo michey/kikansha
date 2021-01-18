@@ -1,4 +1,8 @@
 use crate::figure::Figure;
+use crate::figure::IndexedMesh;
+use crate::figure::MeshPoint;
+use crate::figure::RegularMesh;
+use crate::figure::RenderableMesh;
 use crate::scene::Scene;
 use crate::scene::ViewAndProject;
 use gltf::mesh::util::ReadIndices::{U16, U32, U8};
@@ -16,71 +20,47 @@ impl From<gltf::Error> for LoadingError {
     }
 }
 
-pub fn load_figures(path: &str) -> Result<Vec<Figure>, LoadingError> {
-    let mut figures: Vec<Figure> = Vec::new();
+pub fn load_figures(path: &str) -> Result<Vec<RenderableMesh>, LoadingError> {
+    let mut figures: Vec<RenderableMesh> = Vec::new();
     let (gltf, buffers, _) = gltf::import(path)?;
     for mesh in gltf.meshes() {
         for primitive in mesh.primitives() {
+            let mut points: Vec<MeshPoint> = Vec::new();
             println!("- Primitive #{}, {:?}", primitive.index(), primitive.mode());
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
             let norm_iter = reader.read_normals();
             let vert_iter = reader.read_positions();
 
-            // match (vert_iter, norm_iter)  {
-            //     (Some(verts), Some(norms)) => {
-            //         verts.chain(norms)
-            //         .map(|(norm, vert)| {
-            //             Triangle::new()
-            //         } )
-            //     },
-            //     (_, _) => {}
-            // }
+            // let color_iter = reader.read_colors();
 
-            if let Some(norm_iter) = reader.read_normals() {
-                let mut norm_count = 0;
-                for norm in norm_iter {
-                    // println!("Norm: {:?}", norm);
-                    norm_count += 1;
-                }
-                println!("Norm: {:?}", norm_count);
-            }
-
-            if let Some(indcs) = reader.read_indices() {
-                let mut ind_count = 0;
-
-                match indcs {
-                    U8(iter) => {
-                        for i in iter {
-                            // println!("Position: {:?}", vertex_position);
-                            ind_count += 1;
-                        }
-                    }
-                    U16(iter) => {
-                        for i in iter {
-                            // println!("Position: {:?}", vertex_position);
-                            ind_count += 1;
-                        }
-                    }
-                    U32(iter) => {
-                        for i in iter {
-                            // println!("Position: {:?}", vertex_position);
-                            ind_count += 1;
-                        }
+            match (vert_iter, norm_iter) {
+                (Some(verts), Some(norms)) => {
+                    let iter = verts.zip(norms);
+                    for (vert, norm) in iter {
+                        points.push(MeshPoint::new(vert, norm, [1.0, 1.0, 1.0]))
                     }
                 }
-
-                println!("Ind: {:?}", ind_count);
+                (_, _) => {}
             }
 
-            if let Some(vert_iter) = reader.read_positions() {
-                let mut vert_count = 0;
-                for vertex_position in vert_iter {
-                    // println!("Position: {:?}", vertex_position);
-                    vert_count += 1;
-                }
-                println!("Vert: {:?}", vert_count);
-            }
+            let o_indices = reader.read_indices().map(|indcs| {
+                let indices: Vec<u32> = match indcs {
+                    U8(iter) => iter.map(|i| i as u32).collect(),
+                    U16(iter) => iter.map(|i| i as u32).collect(),
+                    U32(iter) => iter.map(|i| i as u32).collect(),
+                };
+                indices
+            });
+
+            let mesh = match o_indices {
+                Some(indices) => RenderableMesh::Indexed(IndexedMesh {
+                    points: points,
+                    indices: indices,
+                }),
+                None => RenderableMesh::Regular(RegularMesh { points: points }),
+            };
+            figures.push(mesh);
         }
     }
     Ok(figures)

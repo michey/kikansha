@@ -7,6 +7,7 @@ use kikansha::engine::State;
 use kikansha::figure::Figure;
 use kikansha::figure::FigureMutation;
 use kikansha::figure::FigureSet;
+use kikansha::figure::RenderableMesh;
 use kikansha::scene::camera::StickyRotatingCamera;
 use kikansha::scene::gltf::load_figures;
 use kikansha::scene::gltf::LoadingError;
@@ -43,36 +44,50 @@ fn main() {
     let p_camera = StickyRotatingCamera::new(3.5, yaw, pitch);
     let camera = Arc::new(Mutex::new(p_camera));
 
-    let cube_mutations = vec![
-        FigureMutation::unit(),
-        FigureMutation::new([0.75, 0.0, 0.0], 1.0),
-        FigureMutation::new([-0.75, 0.0, 0.0], 1.0),
-        FigureMutation::new([0.0, 0.0, 0.75], 1.0),
-        FigureMutation::new([0.0, 0.0, -0.75], 1.0),
-        FigureMutation::new([0.0, 0.75, 0.0], 1.0),
-        FigureMutation::new([0.0, -0.75, 0.0], 1.0),
+    let mut scene_sets: Vec<FigureSet> = Vec::new();
+
+    // let cube_mutations = vec![
+    //     FigureMutation::unit(),
+    //     FigureMutation::new([0.75, 0.0, 0.0], 1.0),
+    //     FigureMutation::new([-0.75, 0.0, 0.0], 1.0),
+    //     FigureMutation::new([0.0, 0.0, 0.75], 1.0),
+    //     FigureMutation::new([0.0, 0.0, -0.75], 1.0),
+    //     FigureMutation::new([0.0, 0.75, 0.0], 1.0),
+    //     FigureMutation::new([0.0, -0.75, 0.0], 1.0),
+    // ];
+
+    // let cubes_set = FigureSet::new(Figure::unit_cube().to_mesh(), cube_mutations);
+
+    // scene_sets.push(cubes_set);
+
+    let teapot_scale = 0.3;
+    let teapot_mutations = vec![
+        // FigureMutation::new([0.75, 0.75, 0.75], teapot_scale),
+        // FigureMutation::new([0.75, 0.75, -0.75], teapot_scale),
+        // FigureMutation::new([0.75, -0.75, 0.75], teapot_scale),
+        // FigureMutation::new([0.75, -0.75, -0.75], teapot_scale),
+        // FigureMutation::new([-0.75, 0.75, 0.75], teapot_scale),
+        // FigureMutation::new([-0.75, 0.75, -0.75], teapot_scale),
+        // FigureMutation::new([-0.75, -0.75, 0.75], teapot_scale),
+        // FigureMutation::new([-0.75, -0.75, -0.75], teapot_scale),
+        FigureMutation::new([0.0, 0.0, 0.0], teapot_scale),
     ];
 
-    let cubes_set = FigureSet::new(Figure::unit_cube().to_mesh(), cube_mutations);
-
-    let tetra_mutations = vec![
-        FigureMutation::new([0.75, 0.75, 0.75], 1.0),
-        FigureMutation::new([0.75, 0.75, -0.75], 1.0),
-        FigureMutation::new([0.75, -0.75, 0.75], 1.0),
-        FigureMutation::new([0.75, -0.75, -0.75], 1.0),
-        FigureMutation::new([-0.75, 0.75, 0.75], 1.0),
-        FigureMutation::new([-0.75, 0.75, -0.75], 1.0),
-        FigureMutation::new([-0.75, -0.75, 0.75], 1.0),
-        FigureMutation::new([-0.75, -0.75, -0.75], 1.0),
-    ];
-
-    let tetra_set = FigureSet::new(Figure::unit_tetrahedron().to_mesh(), tetra_mutations);
-
-    let sce2: Result<Vec<Figure>, LoadingError> =
+    let sce2: Result<Vec<RenderableMesh>, LoadingError> =
         // load_scene_from_file("/home/michey/Projects/hello_vulkan/data/models/teapot.gltf");
         load_figures("./data/models/teapot.gltf");
+    match sce2 {
+        Ok(meshes) => match meshes.first() {
+            Some(mesh) => {
+                let teapot_set = FigureSet::new(mesh.clone(), teapot_mutations);
+                scene_sets.push(teapot_set);
+            }
+            _ => {}
+        },
+        _ => {}
+    }
 
-    let scene = Scene::create(camera.clone(), vec![cubes_set, tetra_set], vec![]);
+    let scene = Scene::create(camera.clone(), scene_sets, vec![]);
 
     let sleep = Duration::from_millis(10);
 
