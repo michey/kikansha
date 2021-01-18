@@ -1,4 +1,4 @@
-use crate::frame::CachedEntities;
+use crate::engine::cache::{CachedEntities, CachedEntity};
 use crate::frame::CameraMatrices;
 use crate::frame::ConcreteGraphicsPipeline;
 use nalgebra::Vector3;
@@ -46,9 +46,9 @@ impl PointLightingSystem {
                         color_op: BlendOp::Add,
                         color_source: BlendFactor::One,
                         color_destination: BlendFactor::One,
-                        alpha_op: BlendOp::Add,
-                        alpha_source: BlendFactor::Zero,
-                        alpha_destination: BlendFactor::DstColor,
+                        alpha_op: BlendOp::Max,
+                        alpha_source: BlendFactor::One,
+                        alpha_destination: BlendFactor::One,
                         mask_red: true,
                         mask_green: true,
                         mask_blue: true,
@@ -124,39 +124,65 @@ impl PointLightingSystem {
         )
         .unwrap();
 
+        let color_layout = self.pipeline.layout().descriptor_set_layout(1).unwrap();
+
+        let descriptor_set = Arc::new(
+            PersistentDescriptorSet::start(color_layout.clone())
+                .add_image(color_input.clone())
+                .unwrap()
+                .add_image(normals_input.clone())
+                .unwrap()
+                .add_image(depth_input.clone())
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+
         for cached_entity in cached_scene.entities.clone() {
-            for mutation in cached_entity.mutations {
-                let vertex_layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
-                let color_layout = self.pipeline.layout().descriptor_set_layout(1).unwrap();
-                
-                let vertex_desc_set = Arc::new(
-                    PersistentDescriptorSet::start(vertex_layout.clone())
-                        .add_buffer(mutation)
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                );
+            match cached_entity {
+                CachedEntity::Regular(r) => {
+                    for mutation in r.mutations {
+                        let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
 
-                let descriptor_set = PersistentDescriptorSet::start(color_layout.clone())
-                    .add_image(color_input.clone())
-                    .unwrap()
-                    .add_image(normals_input.clone())
-                    .unwrap()
-                    .add_image(depth_input.clone())
-                    .unwrap()
-                    .build()
-                    .unwrap();
+                        let set = PersistentDescriptorSet::start(layout.clone())
+                            .add_buffer(mutation)
+                            .unwrap()
+                            .build()
+                            .unwrap();
 
-                builder
-                    .draw_indexed(
-                        self.pipeline.clone(),
-                        dynamic_state,
-                        cached_entity.vert_params.clone(),
-                        cached_entity.indices_params.clone(),
-                        (vertex_desc_set, descriptor_set),
-                        push_constants,
-                    )
-                    .unwrap();
+                        builder
+                            .draw(
+                                self.pipeline.clone(),
+                                dynamic_state,
+                                r.vert_params.clone(),
+                                (set, descriptor_set.clone()),
+                                push_constants,
+                            )
+                            .unwrap();
+                    }
+                }
+                CachedEntity::Indexed(i) => {
+                    for mutation in i.mutations {
+                        let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
+
+                        let set = PersistentDescriptorSet::start(layout.clone())
+                            .add_buffer(mutation)
+                            .unwrap()
+                            .build()
+                            .unwrap();
+
+                        builder
+                            .draw_indexed(
+                                self.pipeline.clone(),
+                                dynamic_state,
+                                i.vert_params.clone(),
+                                i.indices.clone(),
+                                (set, descriptor_set.clone()),
+                                push_constants,
+                            )
+                            .unwrap();
+                    }
+                }
             }
         }
 

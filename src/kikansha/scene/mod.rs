@@ -3,6 +3,7 @@ extern crate nalgebra_glm as glm;
 
 pub mod camera;
 pub mod lights;
+pub mod gltf;
 
 use crate::figure::FigureSet;
 use crate::scene::camera::ViewAndProject;

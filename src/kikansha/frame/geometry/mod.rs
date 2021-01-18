@@ -1,4 +1,4 @@
-use crate::engine::cache::CachedEntities;
+use crate::engine::cache::{CachedEntities, CachedEntity};
 use crate::frame::ConcreteGraphicsPipeline;
 use crate::scene::camera::CameraMatrices;
 use std::sync::Arc;
@@ -34,6 +34,7 @@ impl TriangleDrawSystem {
                     .vertex_input_single_buffer()
                     .vertex_shader(vs.main_entry_point(), ())
                     .triangle_list()
+                    .depth_write(true)
                     .viewports_dynamic_scissors_irrelevant(1)
                     .fragment_shader(fs.main_entry_point(), ())
                     .depth_stencil_simple_depth()
@@ -69,25 +70,50 @@ impl TriangleDrawSystem {
         .unwrap();
 
         for cached_entity in cached_scene.entities.clone() {
-            for mutation in cached_entity.mutations {
-                let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
+            match cached_entity {
+                CachedEntity::Regular(r) => {
+                    for mutation in r.mutations {
+                        let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
 
-                let set = PersistentDescriptorSet::start(layout.clone())
-                    .add_buffer(mutation)
-                    .unwrap()
-                    .build()
-                    .unwrap();
+                        let set = PersistentDescriptorSet::start(layout.clone())
+                            .add_buffer(mutation)
+                            .unwrap()
+                            .build()
+                            .unwrap();
 
-                builder
-                    .draw_indexed(
-                        self.pipeline.clone(),
-                        dynamic_state,
-                        cached_entity.vert_params.clone(),
-                        cached_entity.indices_params.clone(),
-                        set,
-                        push_constants,
-                    )
-                    .unwrap();
+                        builder
+                            .draw(
+                                self.pipeline.clone(),
+                                dynamic_state,
+                                r.vert_params.clone(),
+                                set,
+                                push_constants,
+                            )
+                            .unwrap();
+                    }
+                }
+                CachedEntity::Indexed(i) => {
+                    for mutation in i.mutations {
+                        let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
+
+                        let set = PersistentDescriptorSet::start(layout.clone())
+                            .add_buffer(mutation)
+                            .unwrap()
+                            .build()
+                            .unwrap();
+
+                        builder
+                            .draw_indexed(
+                                self.pipeline.clone(),
+                                dynamic_state,
+                                i.vert_params.clone(),
+                                i.indices.clone(),
+                                set,
+                                push_constants,
+                            )
+                            .unwrap();
+                    }
+                }
             }
         }
 

@@ -1,29 +1,54 @@
 use crate::figure::FigureMutation;
 use crate::figure::FigureSet;
 use crate::figure::PerVerexParams;
-use vulkano::buffer::BufferUsage;
-use crate::scene::Scene;
+use crate::figure::RenderableMesh;
 use crate::scene::camera::ViewAndProject;
+use crate::scene::Scene;
 use std::sync::Arc;
+use vulkano::buffer::BufferUsage;
 use vulkano::buffer::CpuAccessibleBuffer;
 use vulkano::device::Device;
 
 #[derive(Debug, Clone)]
-pub struct CachedEntity {
+pub enum CachedEntity {
+    Indexed(CachedIndexedEntity),
+    Regular(CachedRegularEntity),
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedIndexedEntity {
     pub vert_params: Arc<CpuAccessibleBuffer<[PerVerexParams]>>,
-    pub indices_params: Arc<CpuAccessibleBuffer<[u32]>>,
+    pub indices: Arc<CpuAccessibleBuffer<[u32]>>,
     pub mutations: Vec<Arc<CpuAccessibleBuffer<FigureMutation>>>,
 }
 
-impl CachedEntity {
+impl CachedIndexedEntity {
     pub fn new(
         vert_params: Arc<CpuAccessibleBuffer<[PerVerexParams]>>,
-        indices_params: Arc<CpuAccessibleBuffer<[u32]>>,
+        indices: Arc<CpuAccessibleBuffer<[u32]>>,
         mutations: Vec<Arc<CpuAccessibleBuffer<FigureMutation>>>,
     ) -> Self {
-        CachedEntity {
+        CachedIndexedEntity {
             vert_params,
-            indices_params,
+            indices,
+            mutations,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedRegularEntity {
+    pub vert_params: Arc<CpuAccessibleBuffer<[PerVerexParams]>>,
+    pub mutations: Vec<Arc<CpuAccessibleBuffer<FigureMutation>>>,
+}
+
+impl CachedRegularEntity {
+    pub fn new(
+        vert_params: Arc<CpuAccessibleBuffer<[PerVerexParams]>>,
+        mutations: Vec<Arc<CpuAccessibleBuffer<FigureMutation>>>,
+    ) -> Self {
+        CachedRegularEntity {
+            vert_params,
             mutations,
         }
     }
@@ -73,30 +98,6 @@ impl SceneCache {
         let entities = figures
             .iter()
             .map(|figure_set| {
-                let per_vertex_data: Vec<PerVerexParams> = figure_set
-                    .figure
-                    .vertices
-                    .clone()
-                    .into_iter()
-                    .map(|v| PerVerexParams {
-                        position: v.position,
-                        color: figure_set.figure.base_color,
-                    })
-                    .collect();
-                let ver_buff = CpuAccessibleBuffer::from_iter(
-                    device.clone(),
-                    BufferUsage::all(),
-                    false,
-                    per_vertex_data.into_iter(),
-                )
-                .unwrap();
-                let indices_buff = CpuAccessibleBuffer::from_iter(
-                    device.clone(),
-                    BufferUsage::all(),
-                    false,
-                    figure_set.figure.indices.clone().into_iter(),
-                )
-                .unwrap();
                 let mutations = figure_set
                     .mutations
                     .clone()
@@ -111,7 +112,50 @@ impl SceneCache {
                         .unwrap()
                     })
                     .collect();
-                CachedEntity::new(ver_buff, indices_buff, mutations)
+
+                match figure_set.mesh.clone() {
+                    RenderableMesh::Indexed(ind) => {
+                        let per_vertex_params: Vec<PerVerexParams> =
+                            ind.points.into_iter().map(|p| p.to_vert()).collect();
+
+                        let ver_buff = CpuAccessibleBuffer::from_iter(
+                            device.clone(),
+                            BufferUsage::all(),
+                            false,
+                            per_vertex_params.into_iter(),
+                        )
+                        .unwrap();
+
+                        let indices: Vec<u32> = ind.indices;
+
+                        let indices_buff = CpuAccessibleBuffer::from_iter(
+                            device.clone(),
+                            BufferUsage::all(),
+                            false,
+                            indices.into_iter(),
+                        )
+                        .unwrap();
+
+                        CachedEntity::Indexed(CachedIndexedEntity::new(
+                            ver_buff,
+                            indices_buff,
+                            mutations,
+                        ))
+                    }
+                    RenderableMesh::Regular(reg) => {
+                        let per_vertex_params: Vec<PerVerexParams> =
+                            reg.points.into_iter().map(|p| p.to_vert()).collect();
+
+                        let ver_buff = CpuAccessibleBuffer::from_iter(
+                            device.clone(),
+                            BufferUsage::all(),
+                            false,
+                            per_vertex_params.into_iter(),
+                        )
+                        .unwrap();
+                        CachedEntity::Regular(CachedRegularEntity::new(ver_buff, mutations))
+                    }
+                }
             })
             .collect();
         CachedEntities { entities }

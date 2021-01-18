@@ -11,6 +11,7 @@ use std::sync::Arc;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
 use vulkano::command_buffer::CommandBuffer;
 use vulkano::command_buffer::DynamicState;
+use vulkano::command_buffer::SubpassContents;
 use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::framebuffer::FramebufferAbstract;
 use vulkano::framebuffer::RenderPassAbstract;
@@ -77,7 +78,7 @@ impl<'a> Frame<'a> {
                 self.command_buffer_builder
                     .as_mut()
                     .unwrap()
-                    .next_subpass(true)
+                    .next_subpass(SubpassContents::SecondaryCommandBuffers)
                     .unwrap();
 
                 // And returning an object that will allow the user to apply lighting to the scene.

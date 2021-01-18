@@ -14,6 +14,7 @@ layout(push_constant) uniform PushConstants {
 } push_constants;
 
 layout(location = 0) out vec4 f_color;
+layout (location = 0) in vec2 inUV;
 
 void main() {
     vec3 in_normal = normalize(subpassLoad(u_normals).rgb);

@@ -8,6 +8,8 @@ use kikansha::figure::Figure;
 use kikansha::figure::FigureMutation;
 use kikansha::figure::FigureSet;
 use kikansha::scene::camera::StickyRotatingCamera;
+use kikansha::scene::gltf::load_figures;
+use kikansha::scene::gltf::LoadingError;
 use kikansha::scene::Scene;
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -51,7 +53,7 @@ fn main() {
         FigureMutation::new([0.0, -0.75, 0.0], 1.0),
     ];
 
-    let cubes_set = FigureSet::new(Figure::unit_cube(), cube_mutations);
+    let cubes_set = FigureSet::new(Figure::unit_cube().to_mesh(), cube_mutations);
 
     let tetra_mutations = vec![
         FigureMutation::new([0.75, 0.75, 0.75], 1.0),
@@ -64,7 +66,11 @@ fn main() {
         FigureMutation::new([-0.75, -0.75, -0.75], 1.0),
     ];
 
-    let tetra_set = FigureSet::new(Figure::unit_tetrahedron(), tetra_mutations);
+    let tetra_set = FigureSet::new(Figure::unit_tetrahedron().to_mesh(), tetra_mutations);
+
+    let sce2: Result<Vec<Figure>, LoadingError> =
+        // load_scene_from_file("/home/michey/Projects/hello_vulkan/data/models/teapot.gltf");
+        load_figures("./data/models/teapot.gltf");
 
     let scene = Scene::create(camera.clone(), vec![cubes_set, tetra_set], vec![]);
 
@@ -96,10 +102,6 @@ fn main() {
                 yaw_step = -yaw_step;
             }
 
-            {
-                camera.lock().unwrap().set_yaw(yaw);
-            }
-
             let new_pitch = pitch + (elapsed.as_millis() as f32 * pitch_step);
             pitch = new_pitch;
             if new_pitch >= (PI / 2.0) {
@@ -111,7 +113,9 @@ fn main() {
                 pitch = -(PI / 2.0) + pitch_step.abs();
                 pitch_step = -pitch_step
             }
-
+            {
+                camera.lock().unwrap().set_yaw(yaw);
+            }
             {
                 camera.lock().unwrap().set_pitch(pitch);
             }

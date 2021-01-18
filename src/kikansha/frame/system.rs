@@ -7,6 +7,7 @@ use crate::frame::Frame;
 use std::sync::Arc;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
 use vulkano::command_buffer::DynamicState;
+use vulkano::command_buffer::SubpassContents;
 use vulkano::device::Queue;
 use vulkano::format::ClearValue;
 use vulkano::format::Format;
@@ -304,11 +305,11 @@ impl FrameSystem {
         command_buffer_builder
             .begin_render_pass(
                 framebuffer.clone(),
-                true,
+                SubpassContents::SecondaryCommandBuffers,
                 vec![
-                    ClearValue::Float([0.0, 0.0, 0.0, 1.0]),
-                    ClearValue::Float([0.0, 0.0, 0.0, 1.0]),
-                    ClearValue::Float([0.0, 0.0, 0.0, 1.0]),
+                    ClearValue::Float([0.0, 0.0, 0.0, 0.0]),
+                    ClearValue::Float([0.0, 0.0, 0.0, 0.0]),
+                    ClearValue::Float([0.0, 0.0, 0.0, 0.0]),
                     ClearValue::Depth(1.0),
                 ],
             )

@@ -1,6 +1,7 @@
-use crate::engine::cache::CachedEntities;
+use crate::engine::cache::{CachedEntities, CachedEntity};
 use crate::frame::CameraMatrices;
 use crate::frame::ConcreteGraphicsPipeline;
+use crate::frame::PerVerexParams;
 use std::sync::Arc;
 use vulkano::command_buffer::AutoCommandBuffer;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
@@ -36,7 +37,7 @@ impl AmbientLightingSystem {
 
             Arc::new(
                 GraphicsPipeline::start()
-                    .vertex_input_single_buffer()
+                    .vertex_input_single_buffer::<PerVerexParams>()
                     .vertex_shader(vs.main_entry_point(), ())
                     .triangle_list()
                     .viewports_dynamic_scissors_irrelevant(1)
@@ -90,37 +91,61 @@ impl AmbientLightingSystem {
         )
         .unwrap();
 
+        let color_layout = self.pipeline.layout().descriptor_set_layout(1).unwrap();
+
+        let color_desc_set = Arc::new(
+            PersistentDescriptorSet::start(color_layout.clone())
+                .add_image(color_input.clone())
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+
         for cached_entity in cached_scene.entities.clone() {
-            for mutation in cached_entity.mutations {
-                let vertex_layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
-                let color_layout = self.pipeline.layout().descriptor_set_layout(1).unwrap();
-        
-                let vertex_desc_set = Arc::new(
-                    PersistentDescriptorSet::start(vertex_layout.clone())        
-                        .add_buffer(mutation)
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                );
+            match cached_entity {
+                CachedEntity::Regular(r) => {
+                    for mutation in r.mutations {
+                        let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
 
-                let color_desc_set = Arc::new(
-                    PersistentDescriptorSet::start(color_layout.clone())
-                        .add_image(color_input.clone())
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                );
+                        let set = PersistentDescriptorSet::start(layout.clone())
+                            .add_buffer(mutation)
+                            .unwrap()
+                            .build()
+                            .unwrap();
 
-                builder
-                    .draw_indexed(
-                        self.pipeline.clone(),
-                        dynamic_state,
-                        cached_entity.vert_params.clone(),
-                        cached_entity.indices_params.clone(),
-                        (vertex_desc_set, color_desc_set),
-                        push_constants,
-                    )
-                    .unwrap();
+                        builder
+                            .draw(
+                                self.pipeline.clone(),
+                                dynamic_state,
+                                r.vert_params.clone(),
+                                (set, color_desc_set.clone()),
+                                push_constants,
+                            )
+                            .unwrap();
+                    }
+                }
+                CachedEntity::Indexed(i) => {
+                    for mutation in i.mutations {
+                        let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
+
+                        let set = PersistentDescriptorSet::start(layout.clone())
+                            .add_buffer(mutation)
+                            .unwrap()
+                            .build()
+                            .unwrap();
+
+                        builder
+                            .draw_indexed(
+                                self.pipeline.clone(),
+                                dynamic_state,
+                                i.vert_params.clone(),
+                                i.indices.clone(),
+                                (set, color_desc_set.clone()),
+                                push_constants,
+                            )
+                            .unwrap();
+                    }
+                }
             }
         }
 

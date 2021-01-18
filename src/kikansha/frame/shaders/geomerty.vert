@@ -17,10 +17,9 @@ layout(location = 0) out vec4 f_color;
 layout(location = 1) out vec3 f_norm;
 
 
-void main() {   
+void main() {
     mat4 mvpMatrix = push_constants.projection_matrix * push_constants.view_matrix  ;
     gl_Position = mvpMatrix * vec4(position * figure.scale + figure.offset, 1.0);
-    f_color.rgb = color;
-    f_color.a = 1.0;
-    f_norm = vec3(1.0, 0.0, 0.0);
-}   
+    f_color = vec4(color, 0.0);
+    f_norm = vec3(1.0, 1.0, 1.0);
+}

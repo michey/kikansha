@@ -37,7 +37,7 @@ use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::event_loop::EventLoop;
-use winit::platform::desktop::EventLoopExtDesktop;
+use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::window::Window;
 use winit::window::WindowBuilder;
 
@@ -157,7 +157,7 @@ impl State {
         println!("Supported core extensions: {:?}", supported_extensions);
         println!("Supported extensions: {:?}", layers);
         let app_info = ApplicationInfo {
-            application_name: Some("Hello Triangle".into()),
+            application_name: Some("Kikansha".into()),
             application_version: Some(Version {
                 major: 1,
                 minor: 0,
@@ -370,14 +370,13 @@ impl State {
     ) -> (Format, ColorSpace) {
         // NOTE: the 'preferred format' mentioned in the tutorial doesn't seem to be
         // queryable in Vulkano (no VK_FORMAT_UNDEFINED enum)
-        // *available_formats
-        // .iter()
-        // .find(|(format, color_space)| {
-        //     *format == Format::R32G32B32A32Sfloat && *color_space == ColorSpace::SrgbNonLinear
-        // })
-        // .unwrap_or_else(||
-        available_formats[0]
-        // )
+        *available_formats
+            .iter()
+            .find(|(format, color_space)| {
+                *format == Format::B8G8R8A8Unorm && *color_space == ColorSpace::SrgbNonLinear
+                // false
+            })
+            .unwrap_or_else(|| &available_formats[0])
     }
 
     fn choose_swap_present_mode(available_present_modes: SupportedPresentModes) -> PresentMode {
@@ -415,7 +414,6 @@ impl State {
     fn get_required_extensions() -> InstanceExtensions {
         let mut extensions = vulkano_win::required_extensions();
         if ENABLE_VALIDATION_LAYERS {
-            // TODO!: this should be ext_debug_utils (_report is deprecated), but that doesn't exist yet in vulkano
             extensions.ext_debug_utils = true;
         }
         extensions
@@ -473,6 +471,7 @@ impl State {
             let mut locked_camera = scene.camera.lock().unwrap();
             locked_camera.update_ar(dimensions[0] as f32 / dimensions[1] as f32);
         }
+        println!("Draw shit started");
 
         event_loop.run_return(|event, _, control_flow| match event {
             Event::WindowEvent {
@@ -557,7 +556,7 @@ impl State {
                             draw_pass.execute(cb);
                         }
                         Pass::Lighting(mut lighting) => {
-                            lighting.ambient_light([0.9, 0.3, 0.3]);
+                            lighting.ambient_light([0.8, 0.3, 0.3]);
                             lighting
                                 .directional_light(Vector3::new(0.2, -0.1, -0.7), [0.6, 0.6, 0.6]);
                             lighting.point_light(Vector3::new(0.5, -0.5, -0.1), [1.0, 0.0, 0.0]);
@@ -581,7 +580,6 @@ impl State {
                 if let Some(v) = counter.tick() {
                     println!("{:?} fps", v)
                 }
-
                 match future {
                     Ok(future) => {
                         state.previous_frame_end = Some(future.boxed());

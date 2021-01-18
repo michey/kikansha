@@ -10,6 +10,7 @@ layout(push_constant) uniform PushConstants {
     vec4 color;
 } push_constants;
 
+layout (location = 0) in vec2 inUV;
 layout(location = 0) out vec4 out_color;
 
 void main() {
@@ -17,6 +18,5 @@ void main() {
 
     vec3 in_diffuse = subpassLoad(u_diffuse).rgb;
     out_color.rgb = push_constants.color.rgb * in_diffuse;
-    out_color.a = 1.0;
-    // debugPrintfEXT(" ambient_frag %f, %f, %f, %f", out_color);
+    out_color.a = 0.0;
 }
