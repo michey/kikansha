@@ -33,7 +33,7 @@ impl Drop for QuitOnScopeExit<'_> {
 
 fn main() {
 
-    log4rs::init_file("./config/log4rs.yaml", Default::default()).unwrap();
+    log4rs::init_file("/home/michey/Projects/hello_vulkan/config/log4rs.yaml", Default::default()).unwrap();
 
     let mut yaw = PI / 4.0;
     let mut pitch = -PI / 4.0;
@@ -54,7 +54,7 @@ fn main() {
 
     let sce2: Result<Vec<RenderableMesh>, LoadingError> =
         // load_scene_from_file("/home/michey/Projects/hello_vulkan/data/models/teapot.gltf");
-        load_figures("./data/models/teapot.gltf");
+        load_figures("/home/michey/Projects/hello_vulkan/data/models/teapot.gltf");
 
     match sce2 {
         Ok(meshes) => match meshes.first() {
@@ -62,8 +62,8 @@ fn main() {
                 let teapot_set = FigureSet::new(
                     mesh.clone(),
                     teapot_mutations,
-                    "./src/kikansha/frame/resources/tex.png".to_string(),
-                    "./src/kikansha/frame/resources/tex.png".to_string(),
+                    "/home/michey/Projects/hello_vulkan/src/kikansha/frame/resources/tex.png".to_string(),
+                    "/home/michey/Projects/hello_vulkan/src/kikansha/frame/resources/tex.png".to_string(),
                 );
                 scene_sets.push(teapot_set);
             }

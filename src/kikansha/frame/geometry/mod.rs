@@ -13,11 +13,12 @@ use vulkano::framebuffer::RenderPassAbstract;
 use vulkano::framebuffer::Subpass;
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::GraphicsPipelineAbstract;
-use vulkano::sampler::Sampler;
+use vulkano::sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode};
 
 pub struct TriangleDrawSystem {
     gfx_queue: Arc<Queue>,
     pipeline: Arc<ConcreteGraphicsPipeline>,
+    default_sampler: Arc<Sampler>,
 }
 
 impl TriangleDrawSystem {
@@ -38,6 +39,8 @@ impl TriangleDrawSystem {
                     .vertex_input_single_buffer()
                     .vertex_shader(vs.main_entry_point(), ())
                     .triangle_list()
+                    .cull_mode_back()
+                    .front_face_clockwise()
                     .depth_write(true)
                     .viewports_dynamic_scissors_irrelevant(1)
                     .fragment_shader(fs.main_entry_point(), ())
@@ -48,9 +51,25 @@ impl TriangleDrawSystem {
             )
         };
 
+        let default_sampler = Sampler::new(
+            pipeline.device().clone(),
+            Filter::Nearest,
+            Filter::Nearest,
+            MipmapMode::Linear,
+            SamplerAddressMode::ClampToEdge,
+            SamplerAddressMode::ClampToEdge,
+            SamplerAddressMode::ClampToEdge,
+            0.0,
+            1.0,
+            0.0,
+            1.0,
+        )
+        .unwrap();
+
         TriangleDrawSystem {
             gfx_queue,
             pipeline,
+            default_sampler,
         }
     }
 
@@ -96,15 +115,12 @@ impl TriangleDrawSystem {
                     for _mutation in r.mutations {
                         let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
 
-                        let s1 = Sampler::simple_repeat_linear(self.pipeline.device().clone());
-                        let s2 = Sampler::simple_repeat_linear(self.pipeline.device().clone());
-
                         let set = PersistentDescriptorSet::start(layout.clone())
                             .add_buffer(buff.clone())
                             .unwrap()
-                            .add_sampled_image(r.color_texture.clone(), s1)
+                            .add_sampled_image(r.color_texture.clone(), self.default_sampler.clone())
                             .unwrap()
-                            .add_sampled_image(r.normal_texture.clone(), s2)
+                            .add_sampled_image(r.normal_texture.clone(), self.default_sampler.clone())
                             .unwrap()
                             .build()
                             .unwrap();
@@ -124,15 +140,12 @@ impl TriangleDrawSystem {
                     for _mutation in i.mutations {
                         let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
 
-                        let s1 = Sampler::simple_repeat_linear(self.pipeline.device().clone());
-                        let s2 = Sampler::simple_repeat_linear(self.pipeline.device().clone());
-
                         let set = PersistentDescriptorSet::start(layout.clone())
                             .add_buffer(buff.clone())
                             .unwrap()
-                            .add_sampled_image(i.color_texture.clone(), s1)
+                            .add_sampled_image(i.color_texture.clone(), self.default_sampler.clone())
                             .unwrap()
-                            .add_sampled_image(i.normal_texture.clone(), s2)
+                            .add_sampled_image(i.normal_texture.clone(), self.default_sampler.clone())
                             .unwrap()
                             .build()
                             .unwrap();

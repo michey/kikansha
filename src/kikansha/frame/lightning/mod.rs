@@ -23,6 +23,7 @@ use vulkano::sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode};
 pub struct LightingSystem {
     gfx_queue: Arc<Queue>,
     pipeline: Arc<ConcreteGraphicsPipeline>,
+    default_sampler: Arc<Sampler>,
 }
 
 impl LightingSystem {
@@ -31,6 +32,8 @@ impl LightingSystem {
         gfx_queue: Arc<Queue>,
         subpass: Subpass<Arc<dyn RenderPassAbstract + Send + Sync + 'static>>,
     ) -> LightingSystem {
+
+
         log::trace!("insance of {}",  std::any::type_name::<Self>());
         let pipeline = {
             let vs = vs::Shader::load(gfx_queue.device().clone())
@@ -51,9 +54,26 @@ impl LightingSystem {
             )
         };
 
+        let default_sampler = Sampler::new(
+            pipeline.device().clone(),
+            Filter::Nearest,
+            Filter::Nearest,
+            MipmapMode::Linear,
+            SamplerAddressMode::ClampToEdge,
+            SamplerAddressMode::ClampToEdge,
+            SamplerAddressMode::ClampToEdge,
+            0.0,
+            1.0,
+            0.0,
+            1.0,
+        )
+        .unwrap();
+
+
         LightingSystem {
             gfx_queue,
             pipeline,
+            default_sampler
         }
     }
 
@@ -91,6 +111,11 @@ impl LightingSystem {
         C: ImageViewAccess + Send + Sync + Clone + 'static,
         N: ImageViewAccess + Send + Sync + Clone + 'static,
     {
+
+        let eye = matrices_buff.camera_position;
+        let view_pos = [eye[0] * -1.0, eye[1] * -1.0, eye[2] * -1.0, 0.0];
+
+
         let mut packed_lights = Vec::new();
 
         for l in lights {
@@ -102,8 +127,7 @@ impl LightingSystem {
                 }),
             }
         }
-        let eye = matrices_buff.camera_position;
-        let view_pos = [eye[0] * -1.0, eye[1] * -1.0, eye[2] * -1.0, 0.0];
+
 
         let push_constants = fs::ty::UBO {
             lights: packed_lights.try_into().unwrap(),
@@ -120,7 +144,7 @@ impl LightingSystem {
 
         let buff = CpuAccessibleBuffer::from_data(
             self.pipeline.device().clone(),
-            BufferUsage::all(),
+            BufferUsage::uniform_buffer(),
             false,
             push_constants,
         )
@@ -128,20 +152,7 @@ impl LightingSystem {
 
         let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
 
-        let s1 = Sampler::new(
-            self.pipeline.device().clone(),
-            Filter::Nearest,
-            Filter::Nearest,
-            MipmapMode::Linear,
-            SamplerAddressMode::ClampToEdge,
-            SamplerAddressMode::ClampToEdge,
-            SamplerAddressMode::ClampToEdge,
-            0.0,
-            1.0,
-            0.0,
-            1.0,
-        )
-        .unwrap();
+
 
         for cached_entity in cached_scene.entities.clone() {
             match cached_entity {
@@ -150,11 +161,11 @@ impl LightingSystem {
                         let set = PersistentDescriptorSet::start(layout.clone())
                             .add_empty()
                             .unwrap()
-                            .add_sampled_image(color_input.clone(), s1.clone())
+                            .add_sampled_image(color_input.clone(), self.default_sampler.clone())
                             .unwrap()
-                            .add_sampled_image(normals_input.clone(), s1.clone())
+                            .add_sampled_image(normals_input.clone(), self.default_sampler.clone())
                             .unwrap()
-                            .add_sampled_image(albedo_input.clone(), s1.clone())
+                            .add_sampled_image(albedo_input.clone(), self.default_sampler.clone())
                             .unwrap()
                             .add_buffer(buff.clone())
                             .unwrap()
@@ -177,11 +188,11 @@ impl LightingSystem {
                         let set = PersistentDescriptorSet::start(layout.clone())
                             .add_empty()
                             .unwrap()
-                            .add_sampled_image(color_input.clone(), s1.clone())
+                            .add_sampled_image(color_input.clone(), self.default_sampler.clone())
                             .unwrap()
-                            .add_sampled_image(normals_input.clone(), s1.clone())
+                            .add_sampled_image(normals_input.clone(), self.default_sampler.clone())
                             .unwrap()
-                            .add_sampled_image(albedo_input.clone(), s1.clone())
+                            .add_sampled_image(albedo_input.clone(), self.default_sampler.clone())
                             .unwrap()
                             .add_buffer(buff.clone())
                             .unwrap()

@@ -1,7 +1,7 @@
 /target
 /data
 vulkan_asset_pack_gltf.zip
-perf.data
+perf.data*
 flamegraph.svg
 heaptrack.*
 massif.*

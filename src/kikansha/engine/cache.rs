@@ -87,6 +87,7 @@ pub struct SceneCache {
 
 impl SceneCache {
     pub fn default() -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         SceneCache {
             cache_id: 0,
             state: None,
@@ -121,6 +122,8 @@ impl SceneCache {
         device: Arc<Device>,
         queue: Arc<Queue>,
     ) -> CachedEntities {
+        log::trace!("insance of {}",  std::any::type_name::<CachedEntities>());
+
         let entities = figures
             .iter()
             .map(|figure_set| {

@@ -19,8 +19,8 @@ debug = true
 
 
 [dependencies]
-vulkano = "0.20"
-vulkano-shaders = "0.20"
+vulkano = "0.20.0"
+vulkano-shaders = "0.20.0"
 gltf = "0.15.2"
 winit = "0.24"
 vulkano-win = "0.20.0"

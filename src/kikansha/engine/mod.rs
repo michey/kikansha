@@ -59,8 +59,13 @@ const ENABLE_VALIDATION_LAYERS: bool = true;
 const ENABLE_VALIDATION_LAYERS: bool = false;
 
 const VALIDATION_LAYERS: &[&str] = &[
+    // "VK_LAYER_RENDERDOC_Capture",
+    "VK_LAYER_NV_optimus",
+    // "VK_LAYER_LUNARG_monitor",
+    // "VK_LAYER_LUNARG_screenshot",
+    // "VK_LAYER_LUNARG_device_simulation",
+    // "VK_LAYER_LUNARG_api_dump",
     "VK_LAYER_KHRONOS_validation",
-    // "VK_LAYER_LUNARG_api_dump"
 ];
 
 pub struct State {
@@ -144,7 +149,7 @@ impl State {
 
     fn create_instance() -> Arc<Instance> {
         if ENABLE_VALIDATION_LAYERS && !Self::check_validation_layer_support() {
-            log::info!("Validation layers requested, but not available!")
+            log::error!("Validation layers requested, but not available!")
         }
         let supported_extensions = InstanceExtensions::supported_by_core()
             .expect("failed to retrieve supported extensions");
@@ -410,8 +415,18 @@ impl State {
     }
     fn get_required_extensions() -> InstanceExtensions {
         let mut extensions = vulkano_win::required_extensions();
+
+        // extensions.khr_swapchain = true;
+        // extensions.khr_storage_buffer_storage_class = true;
+        // extensions.ext_debug_utils = true;
         if ENABLE_VALIDATION_LAYERS {
             extensions.ext_debug_utils = true;
+            extensions.khr_wayland_surface = false;
+            extensions.khr_android_surface = false;
+            extensions.khr_win32_surface = false;
+            extensions.mvk_ios_surface = false;
+            extensions.mvk_macos_surface = false;
+            extensions.nn_vi_surface = false;
         }
         extensions
     }
@@ -428,7 +443,11 @@ impl State {
             verbose: true,
         };
         DebugCallback::new(&instance, msg_severity, msg_types, |msg| {
-            log::info!("validation layer: {:?}", msg.description);
+            // log::info!(
+            //     "Debug CB: LP:{:?}, msg: {:?}",
+            //     msg.layer_prefix,
+            //     msg.description,
+            // );
         })
         .ok()
     }
@@ -496,6 +515,7 @@ impl State {
                     .cleanup_finished();
 
                 if state.recreate_swap_chain {
+                    log::trace!("recreate_swap_chain");
                     {
                         let mut locked_camera = scene.camera.lock().unwrap();
                         let dimensions: [u32; 2] = state.surface.window().inner_size().into();
