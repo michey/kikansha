@@ -178,6 +178,7 @@ impl FrameSystem {
         final_output_format: Format,
         dimensions: [u32; 2],
     ) -> FrameSystem {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         let (render_pass, albedo_buffer, normals_buffer, depth_buffer, lighting_system) =
             Self::create_everything(&gfx_queue, final_output_format, dimensions);
 

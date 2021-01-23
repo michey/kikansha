@@ -8,6 +8,7 @@ pub struct Counter {
 
 impl Counter {
     pub fn new(report_every: u8) -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         Self {
             last_time: SystemTime::now(),
             report_every,

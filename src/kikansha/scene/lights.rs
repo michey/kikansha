@@ -15,6 +15,8 @@ pub struct PointLight {
 
 impl PointLight {
     pub fn new(position: Vec4, color: Vec3, radius: f32) -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
+
         PointLight {
             position,
             color,

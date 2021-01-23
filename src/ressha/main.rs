@@ -24,7 +24,7 @@ struct QuitOnScopeExit<'a> {
 impl Drop for QuitOnScopeExit<'_> {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            println!("Panicking");
+            log::error!("Panicking");
         }
 
         let _ = self.quit_send.send(true);
@@ -32,6 +32,9 @@ impl Drop for QuitOnScopeExit<'_> {
 }
 
 fn main() {
+
+    log4rs::init_file("./config/log4rs.yaml", Default::default()).unwrap();
+
     let mut yaw = PI / 4.0;
     let mut pitch = -PI / 4.0;
     let yaw_loop = Duration::from_secs(6_u64);
@@ -81,7 +84,7 @@ fn main() {
             quit_send: &quit_send,
         };
 
-        println!("Thread created");
+        log::info!("Thread created");
 
         loop {
             let current_ts = SystemTime::now();

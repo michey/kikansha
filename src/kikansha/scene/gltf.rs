@@ -1,15 +1,12 @@
-use nalgebra_glm::normalize;
-use nalgebra_glm::cross;
-use nalgebra_glm::length;
-use nalgebra::Vector3;
 use crate::figure::IndexedMesh;
 use crate::figure::MeshPoint;
 use crate::figure::RegularMesh;
 use crate::figure::RenderableMesh;
-use crate::scene::Scene;
-use crate::scene::ViewAndProject;
 use gltf::mesh::util::ReadIndices::{U16, U32, U8};
-use gltf::Gltf;
+use nalgebra::Vector3;
+use nalgebra_glm::cross;
+use nalgebra_glm::length;
+use nalgebra_glm::normalize;
 
 pub enum LoadingError {
     Ooops,
@@ -27,7 +24,6 @@ pub fn load_figures(path: &str) -> Result<Vec<RenderableMesh>, LoadingError> {
     for mesh in gltf.meshes() {
         for primitive in mesh.primitives() {
             let mut points: Vec<MeshPoint> = Vec::new();
-            println!("- Primitive #{}, {:?}", primitive.index(), primitive.mode());
             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
             let norm_iter = reader.read_normals();
@@ -39,19 +35,19 @@ pub fn load_figures(path: &str) -> Result<Vec<RenderableMesh>, LoadingError> {
                 (Some(verts), Some(norms), Some(tangents)) => {
                     let iter = verts.zip(norms).zip(tangents);
                     for ((vert, norm), tang) in iter {
-                        points.push(MeshPoint::new(vert, [1.0, 1.0, 1.0], norm, [tang[0],tang[1],tang[2],]))
+                        points.push(MeshPoint::new(
+                            vert,
+                            [1.0, 1.0, 1.0],
+                            norm,
+                            [tang[0], tang[1], tang[2]],
+                        ))
                     }
                 }
                 (Some(verts), Some(norms), None) => {
                     let iter = verts.zip(norms);
                     for (vert, norm) in iter {
                         let tangent = calc_tangent(norm.clone());
-                        points.push(MeshPoint::new(
-                            vert,
-                            [1.0, 1.0, 1.0],
-                            norm,
-                            tangent,
-                        ))
+                        points.push(MeshPoint::new(vert, [1.0, 1.0, 1.0], norm, tangent))
                     }
                 }
                 (_, _, _) => {}
@@ -76,23 +72,6 @@ pub fn load_figures(path: &str) -> Result<Vec<RenderableMesh>, LoadingError> {
     Ok(figures)
 }
 
-pub fn load_scene_from_file<T: ViewAndProject + Sized>(
-    path: &str,
-) -> Result<Scene<T>, LoadingError> {
-    // let (document, buffers, images) = gltf::import(path)?;
-    let gltf = Gltf::open(path)?;
-    for scene in gltf.scenes() {
-        for node in scene.nodes() {
-            println!(
-                "Node #{} has {} children",
-                node.index(),
-                node.children().count(),
-            );
-        }
-    }
-    Err(LoadingError::Ooops)
-}
-
 pub fn calc_tangent(norm: [f32; 3]) -> [f32; 3] {
     let v1 = Vector3::new(0.0, 0.0, 1.0);
     let v2 = Vector3::new(0.0, 1.0, 0.0);
@@ -101,11 +80,7 @@ pub fn calc_tangent(norm: [f32; 3]) -> [f32; 3] {
     let c1: Vector3<f32> = cross(&v_norm, &v1);
     let c2: Vector3<f32> = cross(&v_norm, &v2);
 
-    let mut tang = if length(&c1) > length(&c2) {
-        c1
-    } else {
-        c2
-    };
+    let mut tang = if length(&c1) > length(&c2) { c1 } else { c2 };
 
     tang = normalize(&tang);
     tang.into()

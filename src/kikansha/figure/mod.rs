@@ -23,6 +23,7 @@ impl PerVerexParams {
         in_normal: [f32; 3],
         in_tangent: [f32; 3],
     ) -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         PerVerexParams {
             in_pos,
             in_uv,
@@ -41,6 +42,7 @@ pub struct FigureMutation {
 
 impl FigureMutation {
     pub fn new(position_offset: [f32; 3], scale: f32) -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         Self {
             position_offset,
             scale,
@@ -67,6 +69,7 @@ pub struct MeshPoint {
 
 impl MeshPoint {
     pub fn new(vert: [f32; 3], color: [f32; 3], normal: [f32; 3], tangent: [f32; 3]) -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         MeshPoint {
             vert: [vert[0], vert[1], vert[2]],
             color: [color[0], color[1], color[2]],
@@ -113,6 +116,7 @@ impl FigureSet {
         color_texture_path: String,
         normal_texture_path: String,
     ) -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         FigureSet {
             mesh,
             mutations,

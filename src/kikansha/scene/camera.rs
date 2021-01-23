@@ -102,6 +102,7 @@ impl StickyRotatingCamera {
     }
 
     pub fn new(distance: f32, yaw: f32, pitch: f32) -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         let eye = Self::calculate_eye(distance, yaw, pitch);
         let fov: f32 = 45.0;
         let aspect_ratio: f32 = 16.0 / 9.0;

@@ -5,6 +5,7 @@ pub struct QueueFamilyIndices {
 
 impl QueueFamilyIndices {
     pub fn new() -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         Self {
             graphics_family: -1,
             present_family: -1,

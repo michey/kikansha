@@ -38,6 +38,7 @@ impl CachedIndexedEntity {
         color_texture: Arc<ImmutableImage<Format>>,
         normal_texture: Arc<ImmutableImage<Format>>,
     ) -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         CachedIndexedEntity {
             vert_params,
             indices,
@@ -63,6 +64,7 @@ impl CachedRegularEntity {
         color_texture: Arc<ImmutableImage<Format>>,
         normal_texture: Arc<ImmutableImage<Format>>,
     ) -> Self {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         CachedRegularEntity {
             vert_params,
             mutations,

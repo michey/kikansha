@@ -144,7 +144,7 @@ impl State {
 
     fn create_instance() -> Arc<Instance> {
         if ENABLE_VALIDATION_LAYERS && !Self::check_validation_layer_support() {
-            println!("Validation layers requested, but not available!")
+            log::info!("Validation layers requested, but not available!")
         }
         let supported_extensions = InstanceExtensions::supported_by_core()
             .expect("failed to retrieve supported extensions");
@@ -153,8 +153,8 @@ impl State {
             .map(|l| l.name().to_owned())
             .collect();
 
-        println!("Supported core extensions: {:?}", supported_extensions);
-        println!("Supported extensions: {:?}", layers);
+        log::info!("Supported core extensions: {:?}", supported_extensions);
+        log::info!("Supported extensions: {:?}", layers);
         let app_info = ApplicationInfo {
             application_name: Some("Kikansha".into()),
             application_version: Some(Version {
@@ -198,7 +198,6 @@ impl State {
         let indices = Self::find_queue_families(surface, &physical_device);
 
         let families = [indices.graphics_family, indices.present_family];
-
 
         let uniquer_queue_family: HashSet<&i32> = families.iter().collect();
         let queue_priority = 1.0;
@@ -429,7 +428,7 @@ impl State {
             verbose: true,
         };
         DebugCallback::new(&instance, msg_severity, msg_types, |msg| {
-            println!("validation layer: {:?}", msg.description);
+            log::info!("validation layer: {:?}", msg.description);
         })
         .ok()
     }
@@ -462,14 +461,13 @@ impl State {
         let (mut event_loop, surface) = Self::init_loop(&instance_unb);
         let mut state = Self::init(surface, instance_unb);
 
-        let mut counter = Counter::new(1);
+        let mut counter = Counter::new(10);
 
         {
             let dimensions = state.swap_chain_images[0].dimensions();
             let mut locked_camera = scene.camera.lock().unwrap();
             locked_camera.update_ar(dimensions[0] as f32 / dimensions[1] as f32);
         }
-        println!("Draw shit started");
 
         event_loop.run_return(|event, _, control_flow| match event {
             Event::WindowEvent {
@@ -577,7 +575,7 @@ impl State {
                     .then_signal_fence_and_flush();
 
                 if let Some(v) = counter.tick() {
-                    println!("{:?} fps", v)
+                    log::info!("{:?} fps", v)
                 }
                 match future {
                     Ok(future) => {
@@ -588,7 +586,7 @@ impl State {
                         state.previous_frame_end = Some(sync::now(state.device.clone()).boxed());
                     }
                     Err(e) => {
-                        println!("Failed to flush future: {:?}", e);
+                        log::info!("Failed to flush future: {:?}", e);
                         state.previous_frame_end = Some(sync::now(state.device.clone()).boxed());
                     }
                 }

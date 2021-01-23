@@ -31,6 +31,7 @@ impl LightingSystem {
         gfx_queue: Arc<Queue>,
         subpass: Subpass<Arc<dyn RenderPassAbstract + Send + Sync + 'static>>,
     ) -> LightingSystem {
+        log::trace!("insance of {}",  std::any::type_name::<Self>());
         let pipeline = {
             let vs = vs::Shader::load(gfx_queue.device().clone())
                 .expect("failed to create shader module");

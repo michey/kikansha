@@ -3,3 +3,5 @@
 vulkan_asset_pack_gltf.zip
 perf.data
 flamegraph.svg
+heaptrack.*
+massif.*
