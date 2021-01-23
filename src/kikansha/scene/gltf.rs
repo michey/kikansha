@@ -1,4 +1,7 @@
-use crate::figure::Figure;
+use nalgebra_glm::normalize;
+use nalgebra_glm::cross;
+use nalgebra_glm::length;
+use nalgebra::Vector3;
 use crate::figure::IndexedMesh;
 use crate::figure::MeshPoint;
 use crate::figure::RegularMesh;
@@ -13,10 +16,8 @@ pub enum LoadingError {
 }
 
 impl From<gltf::Error> for LoadingError {
-    fn from(err: gltf::Error) -> Self {
-        match err {
-            _ => LoadingError::Ooops,
-        }
+    fn from(_: gltf::Error) -> Self {
+        LoadingError::Ooops
     }
 }
 
@@ -32,16 +33,28 @@ pub fn load_figures(path: &str) -> Result<Vec<RenderableMesh>, LoadingError> {
             let norm_iter = reader.read_normals();
             let vert_iter = reader.read_positions();
 
-            // let color_iter = reader.read_colors();
+            let tangents_iter = reader.read_tangents();
 
-            match (vert_iter, norm_iter) {
-                (Some(verts), Some(norms)) => {
-                    let iter = verts.zip(norms);
-                    for (vert, norm) in iter {
-                        points.push(MeshPoint::new(vert, norm, [1.0, 1.0, 1.0]))
+            match (vert_iter, norm_iter, tangents_iter) {
+                (Some(verts), Some(norms), Some(tangents)) => {
+                    let iter = verts.zip(norms).zip(tangents);
+                    for ((vert, norm), tang) in iter {
+                        points.push(MeshPoint::new(vert, [1.0, 1.0, 1.0], norm, [tang[0],tang[1],tang[2],]))
                     }
                 }
-                (_, _) => {}
+                (Some(verts), Some(norms), None) => {
+                    let iter = verts.zip(norms);
+                    for (vert, norm) in iter {
+                        let tangent = calc_tangent(norm.clone());
+                        points.push(MeshPoint::new(
+                            vert,
+                            [1.0, 1.0, 1.0],
+                            norm,
+                            tangent,
+                        ))
+                    }
+                }
+                (_, _, _) => {}
             }
 
             let o_indices = reader.read_indices().map(|indcs| {
@@ -54,11 +67,8 @@ pub fn load_figures(path: &str) -> Result<Vec<RenderableMesh>, LoadingError> {
             });
 
             let mesh = match o_indices {
-                Some(indices) => RenderableMesh::Indexed(IndexedMesh {
-                    points: points,
-                    indices: indices,
-                }),
-                None => RenderableMesh::Regular(RegularMesh { points: points }),
+                Some(indices) => RenderableMesh::Indexed(IndexedMesh { points, indices }),
+                None => RenderableMesh::Regular(RegularMesh { points }),
             };
             figures.push(mesh);
         }
@@ -81,4 +91,22 @@ pub fn load_scene_from_file<T: ViewAndProject + Sized>(
         }
     }
     Err(LoadingError::Ooops)
+}
+
+pub fn calc_tangent(norm: [f32; 3]) -> [f32; 3] {
+    let v1 = Vector3::new(0.0, 0.0, 1.0);
+    let v2 = Vector3::new(0.0, 1.0, 0.0);
+
+    let v_norm = Vector3::new(norm[0], norm[1], norm[2]);
+    let c1: Vector3<f32> = cross(&v_norm, &v1);
+    let c2: Vector3<f32> = cross(&v_norm, &v2);
+
+    let mut tang = if length(&c1) > length(&c2) {
+        c1
+    } else {
+        c2
+    };
+
+    tang = normalize(&tang);
+    tang.into()
 }

@@ -2,6 +2,8 @@ use crate::engine::cache::{CachedEntities, CachedEntity};
 use crate::frame::ConcreteGraphicsPipeline;
 use crate::scene::camera::CameraMatrices;
 use std::sync::Arc;
+use vulkano::buffer::BufferUsage;
+use vulkano::buffer::CpuAccessibleBuffer;
 use vulkano::command_buffer::AutoCommandBuffer;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
 use vulkano::command_buffer::DynamicState;
@@ -11,6 +13,7 @@ use vulkano::framebuffer::RenderPassAbstract;
 use vulkano::framebuffer::Subpass;
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::GraphicsPipelineAbstract;
+use vulkano::sampler::Sampler;
 
 pub struct TriangleDrawSystem {
     gfx_queue: Arc<Queue>,
@@ -57,10 +60,27 @@ impl TriangleDrawSystem {
         cached_scene: &CachedEntities,
         dynamic_state: &DynamicState,
     ) -> AutoCommandBuffer {
-        let push_constants = vs::ty::PushConstants {
-            projection_matrix: matrices_buff.alligned_projection_matrix(),
-            view_matrix: matrices_buff.alligned_view_matrix(),
+        let push_constants = vs::ty::UBO {
+            projection: matrices_buff.alligned_projection_matrix(),
+            model: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            view: matrices_buff.alligned_view_matrix(),
+            instancePos: [0.0, 0.0, 0.0, 0.0],
+            // [-4.0, 0.0, -4.0, 0.0],
+            // [4.0, 0.0, -4.0, 0.0],
         };
+
+        let buff = CpuAccessibleBuffer::from_data(
+            self.pipeline.device().clone(),
+            BufferUsage::all(),
+            false,
+            push_constants,
+        )
+        .unwrap();
 
         let mut builder = AutoCommandBufferBuilder::secondary_graphics(
             self.gfx_queue.device().clone(),
@@ -72,11 +92,18 @@ impl TriangleDrawSystem {
         for cached_entity in cached_scene.entities.clone() {
             match cached_entity {
                 CachedEntity::Regular(r) => {
-                    for mutation in r.mutations {
+                    for _mutation in r.mutations {
                         let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
 
+                        let s1 = Sampler::simple_repeat_linear(self.pipeline.device().clone());
+                        let s2 = Sampler::simple_repeat_linear(self.pipeline.device().clone());
+
                         let set = PersistentDescriptorSet::start(layout.clone())
-                            .add_buffer(mutation)
+                            .add_buffer(buff.clone())
+                            .unwrap()
+                            .add_sampled_image(r.color_texture.clone(), s1)
+                            .unwrap()
+                            .add_sampled_image(r.normal_texture.clone(), s2)
                             .unwrap()
                             .build()
                             .unwrap();
@@ -87,17 +114,24 @@ impl TriangleDrawSystem {
                                 dynamic_state,
                                 r.vert_params.clone(),
                                 set,
-                                push_constants,
+                                (),
                             )
                             .unwrap();
                     }
                 }
                 CachedEntity::Indexed(i) => {
-                    for mutation in i.mutations {
+                    for _mutation in i.mutations {
                         let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
 
+                        let s1 = Sampler::simple_repeat_linear(self.pipeline.device().clone());
+                        let s2 = Sampler::simple_repeat_linear(self.pipeline.device().clone());
+
                         let set = PersistentDescriptorSet::start(layout.clone())
-                            .add_buffer(mutation)
+                            .add_buffer(buff.clone())
+                            .unwrap()
+                            .add_sampled_image(i.color_texture.clone(), s1)
+                            .unwrap()
+                            .add_sampled_image(i.normal_texture.clone(), s2)
                             .unwrap()
                             .build()
                             .unwrap();
@@ -109,7 +143,7 @@ impl TriangleDrawSystem {
                                 i.vert_params.clone(),
                                 i.indices.clone(),
                                 set,
-                                push_constants,
+                                (),
                             )
                             .unwrap();
                     }

@@ -4,13 +4,13 @@ extern crate vulkano_win;
 extern crate winit;
 
 use kikansha::engine::State;
-use kikansha::figure::Figure;
 use kikansha::figure::FigureMutation;
 use kikansha::figure::FigureSet;
 use kikansha::figure::RenderableMesh;
 use kikansha::scene::camera::StickyRotatingCamera;
 use kikansha::scene::gltf::load_figures;
 use kikansha::scene::gltf::LoadingError;
+use kikansha::scene::lights::PointLight;
 use kikansha::scene::Scene;
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -32,54 +32,36 @@ impl Drop for QuitOnScopeExit<'_> {
 }
 
 fn main() {
-    let mut yaw = 0.0;
-    let mut pitch = PI / 4.0;
-    let yaw_loop = Duration::from_secs(6 as u64);
+    let mut yaw = PI / 4.0;
+    let mut pitch = -PI / 4.0;
+    let yaw_loop = Duration::from_secs(6_u64);
     let mut yaw_step = (PI * 2.0) / yaw_loop.as_millis() as f32;
 
-    let pitch_loop = Duration::from_secs(10 as u64);
+    let pitch_loop = Duration::from_secs(10_u64);
     let mut pitch_step = PI / pitch_loop.as_millis() as f32;
 
     let mut init_ts = SystemTime::now();
-    let p_camera = StickyRotatingCamera::new(3.5, yaw, pitch);
+    let p_camera = StickyRotatingCamera::new(5.5, yaw, pitch);
     let camera = Arc::new(Mutex::new(p_camera));
 
     let mut scene_sets: Vec<FigureSet> = Vec::new();
 
-    // let cube_mutations = vec![
-    //     FigureMutation::unit(),
-    //     FigureMutation::new([0.75, 0.0, 0.0], 1.0),
-    //     FigureMutation::new([-0.75, 0.0, 0.0], 1.0),
-    //     FigureMutation::new([0.0, 0.0, 0.75], 1.0),
-    //     FigureMutation::new([0.0, 0.0, -0.75], 1.0),
-    //     FigureMutation::new([0.0, 0.75, 0.0], 1.0),
-    //     FigureMutation::new([0.0, -0.75, 0.0], 1.0),
-    // ];
-
-    // let cubes_set = FigureSet::new(Figure::unit_cube().to_mesh(), cube_mutations);
-
-    // scene_sets.push(cubes_set);
-
-    let teapot_scale = 0.3;
-    let teapot_mutations = vec![
-        // FigureMutation::new([0.75, 0.75, 0.75], teapot_scale),
-        // FigureMutation::new([0.75, 0.75, -0.75], teapot_scale),
-        // FigureMutation::new([0.75, -0.75, 0.75], teapot_scale),
-        // FigureMutation::new([0.75, -0.75, -0.75], teapot_scale),
-        // FigureMutation::new([-0.75, 0.75, 0.75], teapot_scale),
-        // FigureMutation::new([-0.75, 0.75, -0.75], teapot_scale),
-        // FigureMutation::new([-0.75, -0.75, 0.75], teapot_scale),
-        // FigureMutation::new([-0.75, -0.75, -0.75], teapot_scale),
-        FigureMutation::new([0.0, 0.0, 0.0], teapot_scale),
-    ];
+    let teapot_scale = 1.0;
+    let teapot_mutations = vec![FigureMutation::new([0.0, 0.0, 0.0], teapot_scale)];
 
     let sce2: Result<Vec<RenderableMesh>, LoadingError> =
         // load_scene_from_file("/home/michey/Projects/hello_vulkan/data/models/teapot.gltf");
         load_figures("./data/models/teapot.gltf");
+
     match sce2 {
         Ok(meshes) => match meshes.first() {
             Some(mesh) => {
-                let teapot_set = FigureSet::new(mesh.clone(), teapot_mutations);
+                let teapot_set = FigureSet::new(
+                    mesh.clone(),
+                    teapot_mutations,
+                    "./src/kikansha/frame/resources/tex.png".to_string(),
+                    "./src/kikansha/frame/resources/tex.png".to_string(),
+                );
                 scene_sets.push(teapot_set);
             }
             _ => {}
@@ -87,9 +69,9 @@ fn main() {
         _ => {}
     }
 
-    let scene = Scene::create(camera.clone(), scene_sets, vec![]);
+    let scene = Scene::create(camera.clone(), scene_sets, PointLight::default_lights());
 
-    let sleep = Duration::from_millis(10);
+    let sleep = Duration::from_millis(100);
 
     let (event_send, _event_recv) = std::sync::mpsc::sync_channel(1);
     let (quit_send, quit_recv) = std::sync::mpsc::channel();
@@ -131,9 +113,9 @@ fn main() {
             {
                 camera.lock().unwrap().set_yaw(yaw);
             }
-            {
-                camera.lock().unwrap().set_pitch(pitch);
-            }
+            // {
+            //     camera.lock().unwrap().set_pitch(pitch);
+            // }
 
             std::thread::sleep(sleep);
         }

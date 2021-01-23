@@ -14,6 +14,8 @@ path = "src/ressha/main.rs"
 name="kikansha"
 path= "src/kikansha/lib.rs"
 
+[profile.release]
+debug = true
 
 
 [dependencies]
@@ -24,4 +26,5 @@ winit = "0.24"
 vulkano-win = "0.20.0"
 nalgebra = "0.24.0"
 nalgebra-glm = "0.10.0"
+png = "0.16.8"
 

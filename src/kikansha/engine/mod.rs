@@ -9,7 +9,6 @@ use crate::frame::system::FrameSystem;
 use crate::frame::Pass;
 use crate::scene::camera::ViewAndProject;
 use crate::scene::Scene;
-use nalgebra::Vector3;
 use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::SyncSender;
@@ -200,9 +199,8 @@ impl State {
 
         let families = [indices.graphics_family, indices.present_family];
 
-        use std::iter::FromIterator;
 
-        let uniquer_queue_family: HashSet<&i32> = HashSet::from_iter(families.iter());
+        let uniquer_queue_family: HashSet<&i32> = families.iter().collect();
         let queue_priority = 1.0;
 
         let queue_families = uniquer_queue_family.iter().map(|i| {
@@ -536,32 +534,33 @@ impl State {
                 };
 
                 let dynamic_state = { state.dynamic_state.lock().unwrap().clone() };
-                let scene = state.scene_cache.get_cache(scene, state.device.clone());
+                let cached_scene = state.scene_cache.get_cache(
+                    scene,
+                    state.device.clone(),
+                    state.graphics_queue.clone(),
+                );
 
                 let mut frame = state.frame_system.frame(
                     future,
                     state.swap_chain_images[image_num].clone(),
-                    matrices.clone(),
-                    scene.clone(),
+                    scene.lights.clone(),
+                    matrices,
+                    cached_scene.clone(),
                     dynamic_state.clone(),
                 );
 
                 while let Some(pass) = frame.next_pass() {
                     match pass {
                         Pass::Deferred(mut draw_pass) => {
-                            let cb =
-                                state
-                                    .triangle_draw_system
-                                    .draw(&matrices, &scene, &dynamic_state);
+                            let cb = state.triangle_draw_system.draw(
+                                &matrices,
+                                &cached_scene,
+                                &dynamic_state,
+                            );
                             draw_pass.execute(cb);
                         }
                         Pass::Lighting(mut lighting) => {
-                            lighting.ambient_light([0.8, 0.3, 0.3]);
-                            lighting
-                                .directional_light(Vector3::new(0.2, -0.1, -0.7), [0.6, 0.6, 0.6]);
-                            lighting.point_light(Vector3::new(0.5, -0.5, -0.1), [1.0, 0.0, 0.0]);
-                            lighting.point_light(Vector3::new(-0.9, 0.2, -0.15), [0.0, 1.0, 0.0]);
-                            lighting.point_light(Vector3::new(0.0, 0.5, -0.05), [0.0, 0.0, 1.0]);
+                            lighting.light();
                         }
                         Pass::Finished(af) => {
                             after_future = Some(af);

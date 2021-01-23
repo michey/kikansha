@@ -1,25 +1,41 @@
 #version 450
 
-layout(push_constant) uniform PushConstants {
-    mat4 projection_matrix;
-    mat4 view_matrix;
-} push_constants;
+layout (location = 0) in vec4 in_pos;
+layout (location = 1) in vec2 in_uv;
+layout (location = 2) in vec3 in_color;
+layout (location = 3) in vec3 in_normal;
+layout (location = 4) in vec3 in_tangent;
 
-layout(set = 0, binding = 0) buffer Figure {
-    vec3 offset;
-    float scale;
-} figure;
+layout (binding = 0) uniform UBO
+{
+	mat4 projection;
+	mat4 model;
+	mat4 view;
+	vec4 instancePos;
+} ubo;
 
-layout(location = 0) in vec3 position;
-layout(location = 1) in vec3 color;
+layout (location = 0) out vec3 outNormal;
+layout (location = 1) out vec2 outUV;
+layout (location = 2) out vec3 outColor;
+layout (location = 3) out vec3 outWorldPos;
+layout (location = 4) out vec3 outTangent;
 
-layout(location = 0) out vec4 f_color;
-layout(location = 1) out vec3 f_norm;
+void main()
+{
+	vec4 tmpPos = in_pos + ubo.instancePos;
 
+	gl_Position = ubo.projection * ubo.view * ubo.model * tmpPos;
 
-void main() {
-    mat4 mvpMatrix = push_constants.projection_matrix * push_constants.view_matrix  ;
-    gl_Position = mvpMatrix * vec4(position * figure.scale + figure.offset, 1.0);
-    f_color = vec4(color, 0.0);
-    f_norm = vec3(1.0, 1.0, 1.0);
+	outUV = in_uv;
+
+	// Vertex position in world space
+	outWorldPos = vec3(ubo.model * tmpPos);
+
+	// Normal in world space
+	mat3 mNormal = transpose(inverse(mat3(ubo.model)));
+	outNormal = mNormal * normalize(in_normal);
+	outTangent = mNormal * normalize(in_tangent);
+
+	// Currently just vertex color
+	outColor = in_color;
 }

@@ -1,9 +1,8 @@
-use crate::frame::lightning::ambient::AmbientLightingSystem;
-use crate::frame::lightning::directional::DirectionalLightingSystem;
-use crate::frame::lightning::pointing::PointLightingSystem;
+use crate::frame::lightning::LightingSystem;
 use crate::frame::CachedEntities;
 use crate::frame::CameraMatrices;
 use crate::frame::Frame;
+use crate::frame::Light;
 use std::sync::Arc;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
 use vulkano::command_buffer::DynamicState;
@@ -31,7 +30,7 @@ pub struct FrameSystem {
     pub render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
 
     // Intermediate render target that will contain the albedo of each pixel of the scene.
-    pub diffuse_buffer: Arc<AttachmentImage>,
+    pub albedo_buffer: Arc<AttachmentImage>,
     // Intermediate render target that will contain the normal vector in world coordinates of each
     // pixel of the scene.
     // The normal vector is the vector perpendicular to the surface of the object at this point.
@@ -40,54 +39,53 @@ pub struct FrameSystem {
     // This is a traditional depth buffer. `0.0` means "near", and `1.0` means "far".
     pub depth_buffer: Arc<AttachmentImage>,
 
-    // Will allow us to add an ambient lighting to a scene during the second subpass.
-    pub ambient_lighting_system: AmbientLightingSystem,
-    // Will allow us to add a directional light to a scene during the second subpass.
-    pub directional_lighting_system: DirectionalLightingSystem,
-    // Will allow us to add a spot light source to a scene during the second subpass.
-    pub point_lighting_system: PointLightingSystem,
+    // Will allow us to add an lighting to a scene during the second subpass.
+    pub lighting_system: LightingSystem,
 }
+
+type FrameState = (
+    Arc<(dyn RenderPassAbstract + Send + Sync + 'static)>,
+    Arc<AttachmentImage>,
+    Arc<AttachmentImage>,
+    Arc<AttachmentImage>,
+    LightingSystem,
+);
+
+type FrameImages = (
+    Arc<AttachmentImage>,
+    Arc<AttachmentImage>,
+    Arc<AttachmentImage>,
+);
 
 impl FrameSystem {
     fn create_everything(
         gfx_queue: &Arc<Queue>,
         final_output_format: Format,
         dimensions: [u32; 2],
-    ) -> (
-        Arc<(dyn RenderPassAbstract + Send + Sync + 'static)>,
-        Arc<AttachmentImage>,
-        Arc<AttachmentImage>,
-        Arc<AttachmentImage>,
-        AmbientLightingSystem,
-        DirectionalLightingSystem,
-        PointLightingSystem,
-    ) {
+    ) -> FrameState {
         let render_pass: Arc<dyn RenderPassAbstract + Send + Sync + 'static> = Arc::new(
             vulkano::ordered_passes_renderpass!(gfx_queue.device().clone(),
                 attachments: {
                     // The image that will contain the final rendering (in this example the swapchain
                     // image, but it could be another image).
-                    final_color: {
+                    position: {
                         load: Clear,
                         store: Store,
                         format: final_output_format,
                         samples: 1,
                     },
-                    // Will be bound to `self.diffuse_buffer`.
-                    diffuse: {
-                        load: Clear,
-                        store: DontCare,
-                        format: Format::A2B10G10R10UnormPack32,
-                        samples: 1,
-                    },
-                    // Will be bound to `self.normals_buffer`.
                     normals: {
                         load: Clear,
                         store: DontCare,
                         format: Format::R16G16B16A16Sfloat,
                         samples: 1,
                     },
-                    // Will be bound to `self.depth_buffer`.
+                    albedo: {
+                        load: Clear,
+                        store: DontCare,
+                        format: Format::R8G8B8A8Unorm,
+                        samples: 1,
+                    },
                     depth: {
                         load: Clear,
                         store: DontCare,
@@ -98,36 +96,56 @@ impl FrameSystem {
                 passes: [
                     // Write to the diffuse, normals and depth attachments.
                     {
-                        color: [diffuse, normals],
+                        color: [position, normals, albedo],
                         depth_stencil: {depth},
                         input: []
                     },
                     // Apply lighting by reading these three attachments and writing to `final_color`.
                     {
-                        color: [final_color],
+                        color: [position],
                         depth_stencil: {},
-                        input: [diffuse, normals, depth]
+                        input: [normals, albedo, depth]
                     }
                 ]
             )
             .unwrap(),
         );
 
+        let (normals_buffer, albedo_buffer, depth_buffer) =
+            Self::create_images(gfx_queue, dimensions);
+
         // For now we create three temporary images with a dimension of 1 by 1 pixel.
         // These images will be replaced the first time we call `frame()`.
         // TODO: use shortcut provided in vulkano 0.6
+
+        // Initialize the three lighting systems.
+        // Note that we need to pass to them the subpass where they will be executed.
+        let lighting_subpass = Subpass::from(render_pass.clone(), 1).unwrap();
+        let lighting_system = LightingSystem::new(gfx_queue.clone(), lighting_subpass.clone());
+        (
+            render_pass,
+            albedo_buffer,
+            normals_buffer,
+            depth_buffer,
+            lighting_system,
+        )
+    }
+
+    fn create_images(gfx_queue: &Arc<Queue>, dimensions: [u32; 2]) -> FrameImages {
         let atch_usage = ImageUsage {
-            transient_attachment: true,
+            color_attachment: true,
             input_attachment: true,
+            sampled: true,
             ..ImageUsage::none()
         };
-        let diffuse_buffer = AttachmentImage::with_usage(
-            gfx_queue.device().clone(),
-            dimensions,
-            Format::A2B10G10R10UnormPack32,
-            atch_usage,
-        )
-        .unwrap();
+
+        let depth_atach_usage = ImageUsage {
+            depth_stencil_attachment: true,
+            input_attachment: true,
+            sampled: true,
+            ..ImageUsage::none()
+        };
+
         let normals_buffer = AttachmentImage::with_usage(
             gfx_queue.device().clone(),
             dimensions,
@@ -135,32 +153,24 @@ impl FrameSystem {
             atch_usage,
         )
         .unwrap();
-        let depth_buffer = AttachmentImage::with_usage(
+
+        let albedo_buffer = AttachmentImage::with_usage(
             gfx_queue.device().clone(),
             dimensions,
-            Format::D16Unorm,
+            Format::R8G8B8A8Unorm,
             atch_usage,
         )
         .unwrap();
 
-        // Initialize the three lighting systems.
-        // Note that we need to pass to them the subpass where they will be executed.
-        let lighting_subpass = Subpass::from(render_pass.clone(), 1).unwrap();
-        let ambient_lighting_system =
-            AmbientLightingSystem::new(gfx_queue.clone(), lighting_subpass.clone());
-        let directional_lighting_system =
-            DirectionalLightingSystem::new(gfx_queue.clone(), lighting_subpass.clone());
-        let point_lighting_system = PointLightingSystem::new(gfx_queue.clone(), lighting_subpass);
-
-        (
-            render_pass,
-            diffuse_buffer,
-            normals_buffer,
-            depth_buffer,
-            ambient_lighting_system,
-            directional_lighting_system,
-            point_lighting_system,
+        let depth_buffer = AttachmentImage::with_usage(
+            gfx_queue.device().clone(),
+            dimensions,
+            Format::D16Unorm,
+            depth_atach_usage,
         )
+        .unwrap();
+
+        (normals_buffer, albedo_buffer, depth_buffer)
     }
 
     pub fn new(
@@ -168,46 +178,28 @@ impl FrameSystem {
         final_output_format: Format,
         dimensions: [u32; 2],
     ) -> FrameSystem {
-        let (
-            render_pass,
-            diffuse_buffer,
-            normals_buffer,
-            depth_buffer,
-            ambient_lighting_system,
-            directional_lighting_system,
-            point_lighting_system,
-        ) = Self::create_everything(&gfx_queue, final_output_format, dimensions);
+        let (render_pass, albedo_buffer, normals_buffer, depth_buffer, lighting_system) =
+            Self::create_everything(&gfx_queue, final_output_format, dimensions);
 
         FrameSystem {
             gfx_queue,
             render_pass,
-            diffuse_buffer,
+            albedo_buffer,
             normals_buffer,
             depth_buffer,
-            ambient_lighting_system,
-            directional_lighting_system,
-            point_lighting_system,
+            lighting_system,
         }
     }
 
     pub fn recreate_render_pass(&mut self, final_output_format: Format, dimensions: [u32; 2]) {
-        let (
-            render_pass,
-            diffuse_buffer,
-            normals_buffer,
-            depth_buffer,
-            ambient_lighting_system,
-            directional_lighting_system,
-            point_lighting_system,
-        ) = Self::create_everything(&self.gfx_queue, final_output_format, dimensions);
+        let (render_pass, albedo_buffer, normals_buffer, depth_buffer, lighting_system) =
+            Self::create_everything(&self.gfx_queue, final_output_format, dimensions);
 
         self.render_pass = render_pass;
-        self.diffuse_buffer = diffuse_buffer;
+        self.albedo_buffer = albedo_buffer;
         self.normals_buffer = normals_buffer;
         self.depth_buffer = depth_buffer;
-        self.ambient_lighting_system = ambient_lighting_system;
-        self.directional_lighting_system = directional_lighting_system;
-        self.point_lighting_system = point_lighting_system;
+        self.lighting_system = lighting_system;
     }
 
     /// Returns the subpass of the render pass where the rendering should write info to gbuffers.
@@ -233,6 +225,7 @@ impl FrameSystem {
         &mut self,
         before_future: F,
         final_image: I,
+        lights: Vec<Light>,
         matrices: CameraMatrices,
         cached_scene: CachedEntities,
         dynamic_state: DynamicState,
@@ -245,39 +238,17 @@ impl FrameSystem {
         // `self.depth_buffer` if their dimensions doesn't match the dimensions of the final image.
 
         let img_dims = ImageAccess::dimensions(&final_image).width_height();
-        if ImageAccess::dimensions(&self.diffuse_buffer).width_height() != img_dims {
-            // TODO: use shortcut provided in vulkano 0.6
-            let atch_usage = ImageUsage {
-                transient_attachment: true,
-                input_attachment: true,
-                ..ImageUsage::none()
-            };
+        if ImageAccess::dimensions(&self.albedo_buffer).width_height() != img_dims {
+            let (normals_buffer, albedo_buffer, depth_buffer) =
+                Self::create_images(&self.gfx_queue, img_dims);
 
             // Note that we create "transient" images here. This means that the content of the
             // image is only defined when within a render pass. In other words you can draw to
             // them in a subpass then read them in another subpass, but as soon as you leave the
             // render pass their content becomes undefined.
-            self.diffuse_buffer = AttachmentImage::with_usage(
-                self.gfx_queue.device().clone(),
-                img_dims,
-                Format::A2B10G10R10UnormPack32,
-                atch_usage,
-            )
-            .unwrap();
-            self.normals_buffer = AttachmentImage::with_usage(
-                self.gfx_queue.device().clone(),
-                img_dims,
-                Format::R16G16B16A16Sfloat,
-                atch_usage,
-            )
-            .unwrap();
-            self.depth_buffer = AttachmentImage::with_usage(
-                self.gfx_queue.device().clone(),
-                img_dims,
-                Format::D16Unorm,
-                atch_usage,
-            )
-            .unwrap();
+            self.albedo_buffer = albedo_buffer;
+            self.normals_buffer = normals_buffer;
+            self.depth_buffer = depth_buffer;
         }
 
         // Build the framebuffer. The image must be attached in the same order as they were defined
@@ -286,9 +257,9 @@ impl FrameSystem {
             Framebuffer::start(self.render_pass.clone())
                 .add(final_image)
                 .unwrap()
-                .add(self.diffuse_buffer.clone())
-                .unwrap()
                 .add(self.normals_buffer.clone())
+                .unwrap()
+                .add(self.albedo_buffer.clone())
                 .unwrap()
                 .add(self.depth_buffer.clone())
                 .unwrap()
@@ -321,6 +292,7 @@ impl FrameSystem {
             framebuffer,
             num_pass: 0,
             command_buffer_builder: Some(command_buffer_builder),
+            lights,
             matrices,
             cached_scene,
             dynamic_state,

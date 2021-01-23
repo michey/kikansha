@@ -507,6 +507,7 @@ dependencies = [
  "gltf",
  "nalgebra",
  "nalgebra-glm",
+ "png",
  "vulkano",
  "vulkano-shaders",
  "vulkano-win",
