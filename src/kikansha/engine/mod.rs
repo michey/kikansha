@@ -2,6 +2,7 @@ pub mod cache;
 mod queue;
 
 use crate::debug::fps::Counter;
+use crate::debug::tracing::Tracer;
 use crate::engine::cache::SceneCache;
 use crate::engine::queue::QueueFamilyIndices;
 use crate::frame::geometry::TriangleDrawSystem;
@@ -9,6 +10,7 @@ use crate::frame::system::FrameSystem;
 use crate::frame::Pass;
 use crate::scene::camera::ViewAndProject;
 use crate::scene::Scene;
+use core::time::Duration;
 use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::SyncSender;
@@ -295,6 +297,7 @@ impl State {
         {
             image_count = capabilities.max_image_count.unwrap();
         }
+        log::trace!("image_count {}", image_count);
 
         let alpha = capabilities
             .supported_composite_alpha
@@ -302,10 +305,7 @@ impl State {
             .next()
             .unwrap();
 
-        let image_usage = ImageUsage {
-            color_attachment: true,
-            ..ImageUsage::none()
-        };
+        let image_usage = ImageUsage::color_attachment();
 
         let indicies = Self::find_queue_families(&surface, &physical_device);
 
@@ -443,11 +443,7 @@ impl State {
             verbose: true,
         };
         DebugCallback::new(&instance, msg_severity, msg_types, |msg| {
-            // log::info!(
-            //     "Debug CB: LP:{:?}, msg: {:?}",
-            //     msg.layer_prefix,
-            //     msg.description,
-            // );
+            log::info!("Debug Layer: {:?}", msg.description,);
         })
         .ok()
     }
@@ -585,6 +581,7 @@ impl State {
                         }
                     }
                 }
+
                 let future = after_future
                     .unwrap()
                     .then_swapchain_present(

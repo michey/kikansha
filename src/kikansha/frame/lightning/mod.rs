@@ -32,9 +32,7 @@ impl LightingSystem {
         gfx_queue: Arc<Queue>,
         subpass: Subpass<Arc<dyn RenderPassAbstract + Send + Sync + 'static>>,
     ) -> LightingSystem {
-
-
-        log::trace!("insance of {}",  std::any::type_name::<Self>());
+        log::trace!("insance of {}", std::any::type_name::<Self>());
         let pipeline = {
             let vs = vs::Shader::load(gfx_queue.device().clone())
                 .expect("failed to create shader module");
@@ -69,33 +67,13 @@ impl LightingSystem {
         )
         .unwrap();
 
-
         LightingSystem {
             gfx_queue,
             pipeline,
-            default_sampler
+            default_sampler,
         }
     }
 
-    /// Builds a secondary command buffer that applies directional lighting.
-    ///
-    /// This secondary command buffer will read `color_input` and `normals_input`, and multiply the
-    /// color with `color` and the dot product of the `direction` with the normal.
-    /// It then writes the output to the current framebuffer with additive blending (in other words
-    /// the value will be added to the existing value in the framebuffer, and not replace the
-    /// existing value).
-    ///
-    /// Since `normals_input` contains normals in world coordinates, `direction` should also be in
-    /// world coordinates.
-    ///
-    /// - `viewport_dimensions` contains the dimensions of the current framebuffer.
-    /// - `color_input` is an image containing the albedo of each object of the scene. It is the
-    ///   result of the deferred pass.
-    /// - `normals_input` is an image containing the normals of each object of the scene. It is the
-    ///   result of the deferred pass.
-    /// - `direction` is the direction of the light in world coordinates.
-    /// - `color` is the color to apply.
-    ///
     pub fn draw<D, C, N>(
         &self,
         albedo_input: D,
@@ -111,10 +89,8 @@ impl LightingSystem {
         C: ImageViewAccess + Send + Sync + Clone + 'static,
         N: ImageViewAccess + Send + Sync + Clone + 'static,
     {
-
         let eye = matrices_buff.camera_position;
         let view_pos = [eye[0] * -1.0, eye[1] * -1.0, eye[2] * -1.0, 0.0];
-
 
         let mut packed_lights = Vec::new();
 
@@ -127,7 +103,6 @@ impl LightingSystem {
                 }),
             }
         }
-
 
         let push_constants = fs::ty::UBO {
             lights: packed_lights.try_into().unwrap(),
@@ -152,67 +127,66 @@ impl LightingSystem {
 
         let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
 
+        let cached_entity = &cached_scene.entities[0];
+        // for cached_entity in cached_scene.entities.clone() {
+        match cached_entity {
+            CachedEntity::Regular(r) => {
+                // for _mutation in r.mutations {
+                let set = PersistentDescriptorSet::start(layout.clone())
+                    .add_empty()
+                    .unwrap()
+                    .add_sampled_image(color_input, self.default_sampler.clone())
+                    .unwrap()
+                    .add_sampled_image(normals_input, self.default_sampler.clone())
+                    .unwrap()
+                    .add_sampled_image(albedo_input, self.default_sampler.clone())
+                    .unwrap()
+                    .add_buffer(buff)
+                    .unwrap()
+                    .build()
+                    .unwrap();
 
+                builder
+                    .draw(
+                        self.pipeline.clone(),
+                        dynamic_state,
+                        r.vert_params.clone(),
+                        set,
+                        (),
+                    )
+                    .unwrap();
+                // }
+            }
+            CachedEntity::Indexed(i) => {
+                // for _mutation in i.mutations {
+                let set = PersistentDescriptorSet::start(layout.clone())
+                    .add_empty()
+                    .unwrap()
+                    .add_sampled_image(color_input, self.default_sampler.clone())
+                    .unwrap()
+                    .add_sampled_image(normals_input, self.default_sampler.clone())
+                    .unwrap()
+                    .add_sampled_image(albedo_input, self.default_sampler.clone())
+                    .unwrap()
+                    .add_buffer(buff)
+                    .unwrap()
+                    .build()
+                    .unwrap();
 
-        for cached_entity in cached_scene.entities.clone() {
-            match cached_entity {
-                CachedEntity::Regular(r) => {
-                    for _mutation in r.mutations {
-                        let set = PersistentDescriptorSet::start(layout.clone())
-                            .add_empty()
-                            .unwrap()
-                            .add_sampled_image(color_input.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .add_sampled_image(normals_input.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .add_sampled_image(albedo_input.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .add_buffer(buff.clone())
-                            .unwrap()
-                            .build()
-                            .unwrap();
-
-                        builder
-                            .draw(
-                                self.pipeline.clone(),
-                                dynamic_state,
-                                r.vert_params.clone(),
-                                set,
-                                (),
-                            )
-                            .unwrap();
-                    }
-                }
-                CachedEntity::Indexed(i) => {
-                    for _mutation in i.mutations {
-                        let set = PersistentDescriptorSet::start(layout.clone())
-                            .add_empty()
-                            .unwrap()
-                            .add_sampled_image(color_input.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .add_sampled_image(normals_input.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .add_sampled_image(albedo_input.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .add_buffer(buff.clone())
-                            .unwrap()
-                            .build()
-                            .unwrap();
-
-                        builder
-                            .draw_indexed(
-                                self.pipeline.clone(),
-                                dynamic_state,
-                                i.vert_params.clone(),
-                                i.indices.clone(),
-                                set,
-                                (),
-                            )
-                            .unwrap();
-                    }
-                }
+                builder
+                    .draw_indexed(
+                        self.pipeline.clone(),
+                        dynamic_state,
+                        i.vert_params.clone(),
+                        i.indices.clone(),
+                        set,
+                        (),
+                    )
+                    .unwrap();
+                // }
             }
         }
+        // }
 
         builder.build().unwrap()
     }

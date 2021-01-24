@@ -46,7 +46,7 @@ pub fn load_figures(path: &str) -> Result<Vec<RenderableMesh>, LoadingError> {
                 (Some(verts), Some(norms), None) => {
                     let iter = verts.zip(norms);
                     for (vert, norm) in iter {
-                        let tangent = calc_tangent(norm.clone());
+                        let tangent = calc_tangent(norm);
                         points.push(MeshPoint::new(vert, [1.0, 1.0, 1.0], norm, tangent))
                     }
                 }
