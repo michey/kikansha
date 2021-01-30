@@ -1,8 +1,9 @@
+use crate::engine::cache::CachedEntities;
+use crate::frame::frame::Frame;
 use crate::frame::lightning::LightingSystem;
-use crate::frame::CachedEntities;
-use crate::frame::CameraMatrices;
-use crate::frame::Frame;
-use crate::frame::Light;
+use crate::frame::rendering::build_render_pass;
+use crate::scene::camera::CameraMatrices;
+use crate::scene::lights::Light;
 use std::sync::Arc;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
 use vulkano::command_buffer::DynamicState;
@@ -29,14 +30,9 @@ pub struct FrameSystem {
     // in of a change in the dimensions.
     pub render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
 
-    // Intermediate render target that will contain the albedo of each pixel of the scene.
-    pub albedo_buffer: Arc<AttachmentImage>,
-    // Intermediate render target that will contain the normal vector in world coordinates of each
-    // pixel of the scene.
-    // The normal vector is the vector perpendicular to the surface of the object at this point.
+    pub position_buffer: Arc<AttachmentImage>,
     pub normals_buffer: Arc<AttachmentImage>,
-    // Intermediate render target that will contain the depth of each pixel of the scene.
-    // This is a traditional depth buffer. `0.0` means "near", and `1.0` means "far".
+    pub albedo_buffer: Arc<AttachmentImage>,
     pub depth_buffer: Arc<AttachmentImage>,
 
     // Will allow us to add an lighting to a scene during the second subpass.
@@ -48,10 +44,12 @@ type FrameState = (
     Arc<AttachmentImage>,
     Arc<AttachmentImage>,
     Arc<AttachmentImage>,
+    Arc<AttachmentImage>,
     LightingSystem,
 );
 
 type FrameImages = (
+    Arc<AttachmentImage>,
     Arc<AttachmentImage>,
     Arc<AttachmentImage>,
     Arc<AttachmentImage>,
@@ -62,56 +60,12 @@ impl FrameSystem {
         gfx_queue: &Arc<Queue>,
         final_output_format: Format,
         dimensions: [u32; 2],
+        color_debug_level: i32,
     ) -> FrameState {
-        let render_pass: Arc<dyn RenderPassAbstract + Send + Sync + 'static> = Arc::new(
-            vulkano::ordered_passes_renderpass!(gfx_queue.device().clone(),
-                attachments: {
-                    // The image that will contain the final rendering (in this example the swapchain
-                    // image, but it could be another image).
-                    position: {
-                        load: Clear,
-                        store: Store,
-                        format: final_output_format,
-                        samples: 1,
-                    },
-                    normals: {
-                        load: Clear,
-                        store: DontCare,
-                        format: Format::R16G16B16A16Sfloat,
-                        samples: 1,
-                    },
-                    albedo: {
-                        load: Clear,
-                        store: DontCare,
-                        format: Format::R8G8B8A8Unorm,
-                        samples: 1,
-                    },
-                    depth: {
-                        load: Clear,
-                        store: DontCare,
-                        format: Format::D16Unorm,
-                        samples: 1,
-                    }
-                },
-                passes: [
-                    // Write to the diffuse, normals and depth attachments.
-                    {
-                        color: [position, normals, albedo],
-                        depth_stencil: {depth},
-                        input: []
-                    },
-                    // Apply lighting by reading these three attachments and writing to `final_color`.
-                    {
-                        color: [position],
-                        depth_stencil: {},
-                        input: [normals, albedo, depth]
-                    }
-                ]
-            )
-            .unwrap(),
-        );
+        let render_pass: Arc<dyn RenderPassAbstract + Send + Sync + 'static> =
+            build_render_pass(gfx_queue, final_output_format);
 
-        let (normals_buffer, albedo_buffer, depth_buffer) =
+        let (position_buffer, normals_buffer, albedo_buffer, depth_buffer) =
             Self::create_images(gfx_queue, dimensions);
 
         // For now we create three temporary images with a dimension of 1 by 1 pixel.
@@ -121,11 +75,19 @@ impl FrameSystem {
         // Initialize the three lighting systems.
         // Note that we need to pass to them the subpass where they will be executed.
         let lighting_subpass = Subpass::from(render_pass.clone(), 1).unwrap();
-        let lighting_system = LightingSystem::new(gfx_queue.clone(), lighting_subpass.clone());
+        let lighting_system = LightingSystem::new(
+            gfx_queue.clone(),
+            lighting_subpass.clone(),
+            position_buffer.clone(),
+            normals_buffer.clone(),
+            albedo_buffer.clone(),
+            color_debug_level, // depth_buffer.clone(),
+        );
         (
             render_pass,
-            albedo_buffer,
+            position_buffer,
             normals_buffer,
+            albedo_buffer,
             depth_buffer,
             lighting_system,
         )
@@ -145,6 +107,14 @@ impl FrameSystem {
             sampled: true,
             ..ImageUsage::none()
         };
+
+        let position_buffer = AttachmentImage::with_usage(
+            gfx_queue.device().clone(),
+            dimensions,
+            Format::R16G16B16A16Sfloat,
+            atch_usage,
+        )
+        .unwrap();
 
         let normals_buffer = AttachmentImage::with_usage(
             gfx_queue.device().clone(),
@@ -170,35 +140,65 @@ impl FrameSystem {
         )
         .unwrap();
 
-        (normals_buffer, albedo_buffer, depth_buffer)
+        (position_buffer, normals_buffer, albedo_buffer, depth_buffer)
     }
 
     pub fn new(
         gfx_queue: Arc<Queue>,
         final_output_format: Format,
         dimensions: [u32; 2],
+        color_debug_level: i32,
     ) -> FrameSystem {
-        log::trace!("insance of {}",  std::any::type_name::<Self>());
-        let (render_pass, albedo_buffer, normals_buffer, depth_buffer, lighting_system) =
-            Self::create_everything(&gfx_queue, final_output_format, dimensions);
+        log::trace!("insance of {}", std::any::type_name::<Self>());
+        let (
+            render_pass,
+            position_buffer,
+            normals_buffer,
+            albedo_buffer,
+            depth_buffer,
+            lighting_system,
+        ) = Self::create_everything(
+            &gfx_queue,
+            final_output_format,
+            dimensions,
+            color_debug_level,
+        );
 
         FrameSystem {
             gfx_queue,
             render_pass,
-            albedo_buffer,
+            position_buffer,
             normals_buffer,
+            albedo_buffer,
             depth_buffer,
             lighting_system,
         }
     }
 
-    pub fn recreate_render_pass(&mut self, final_output_format: Format, dimensions: [u32; 2]) {
-        let (render_pass, albedo_buffer, normals_buffer, depth_buffer, lighting_system) =
-            Self::create_everything(&self.gfx_queue, final_output_format, dimensions);
+    pub fn recreate_render_pass(
+        &mut self,
+        final_output_format: Format,
+        dimensions: [u32; 2],
+        color_debug_level: i32,
+    ) {
+        let (
+            render_pass,
+            position_buffer,
+            normals_buffer,
+            albedo_buffer,
+            depth_buffer,
+            lighting_system,
+        ) = Self::create_everything(
+            &self.gfx_queue,
+            final_output_format,
+            dimensions,
+            color_debug_level,
+        );
 
         self.render_pass = render_pass;
-        self.albedo_buffer = albedo_buffer;
+        self.position_buffer = position_buffer;
         self.normals_buffer = normals_buffer;
+        self.albedo_buffer = albedo_buffer;
         self.depth_buffer = depth_buffer;
         self.lighting_system = lighting_system;
     }
@@ -240,13 +240,14 @@ impl FrameSystem {
 
         let img_dims = ImageAccess::dimensions(&final_image).width_height();
         if ImageAccess::dimensions(&self.albedo_buffer).width_height() != img_dims {
-            let (normals_buffer, albedo_buffer, depth_buffer) =
+            let (position_buffer, normals_buffer, albedo_buffer, depth_buffer) =
                 Self::create_images(&self.gfx_queue, img_dims);
 
             // Note that we create "transient" images here. This means that the content of the
             // image is only defined when within a render pass. In other words you can draw to
             // them in a subpass then read them in another subpass, but as soon as you leave the
             // render pass their content becomes undefined.
+            self.position_buffer = position_buffer;
             self.albedo_buffer = albedo_buffer;
             self.normals_buffer = normals_buffer;
             self.depth_buffer = depth_buffer;
@@ -256,11 +257,13 @@ impl FrameSystem {
         // with the `ordered_passes_renderpass!` macro.
         let framebuffer = Arc::new(
             Framebuffer::start(self.render_pass.clone())
-                .add(final_image)
+                .add(self.position_buffer.clone())
                 .unwrap()
                 .add(self.normals_buffer.clone())
                 .unwrap()
                 .add(self.albedo_buffer.clone())
+                .unwrap()
+                .add(final_image)
                 .unwrap()
                 .add(self.depth_buffer.clone())
                 .unwrap()
@@ -279,6 +282,7 @@ impl FrameSystem {
                 framebuffer.clone(),
                 SubpassContents::SecondaryCommandBuffers,
                 vec![
+                    ClearValue::Float([0.0, 0.0, 0.0, 0.0]),
                     ClearValue::Float([0.0, 0.0, 0.0, 0.0]),
                     ClearValue::Float([0.0, 0.0, 0.0, 0.0]),
                     ClearValue::Float([0.0, 0.0, 0.0, 0.0]),

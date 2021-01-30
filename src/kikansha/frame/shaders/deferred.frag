@@ -16,7 +16,7 @@ struct Light {
 
 layout (binding = 4) uniform UBO
 {
-	Light lights[1];
+	Light lights[2];
 	vec4 viewPos;
 	int displayDebugTarget;
 } ubo;
@@ -50,7 +50,7 @@ void main()
 
 	// Render-target composition
 
-	#define lightCount 1
+	#define lightCount 2
 	#define ambient 0.3
 
 	// Ambient part
@@ -66,8 +66,8 @@ void main()
 		// Viewer to fragment
 		vec3 V = ubo.viewPos.xyz - fragPos;
 		V = normalize(V);
-
 		//if(dist < ubo.lights[i].radius)
+
 		{
 			// Light to fragment
 			L = normalize(L);

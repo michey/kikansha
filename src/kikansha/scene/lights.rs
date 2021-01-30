@@ -15,7 +15,7 @@ pub struct PointLight {
 
 impl PointLight {
     pub fn new(position: Vec4, color: Vec3, radius: f32) -> Self {
-        log::trace!("insance of {}",  std::any::type_name::<Self>());
+        log::trace!("insance of {}", std::any::type_name::<Self>());
 
         PointLight {
             position,
@@ -26,15 +26,15 @@ impl PointLight {
 
     pub fn default_lights() -> Vec<Light> {
         let a_light = PointLight::new(
-            Vec4::new(0.0, 0.0, 1.0, 0.0),
+            Vec4::new(0.0, 0.0, 5.0, 0.0),
             Vec3::new(1.0, 1.0, 1.0),
             15.0 * 0.25,
         );
-        // let b_light = PointLight::new(
-        //     Vec4::new(-2.0, 0.0, 0.0, 0.0),
-        //     Vec3::new(1.0, 0.0, 0.0),
-        //     15.0,
-        // );
+        let b_light = PointLight::new(
+            Vec4::new(-2.0, 5.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            15.0,
+        );
 
         // let c_light = PointLight::new(
         //     Vec4::new(2.0, -1.0, 0.0, 0.0),
@@ -60,11 +60,12 @@ impl PointLight {
         //     25.0,
         // );
 
-        [a_light,
-        // b_light, c_light, d_light, e_light, f_light
+        [
+            a_light, b_light,
+            //  c_light, d_light, e_light, f_light
         ]
-            .iter()
-            .map(|pl| Light::Point(pl.clone()))
-            .collect()
+        .iter()
+        .map(|pl| Light::Point(pl.clone()))
+        .collect()
     }
 }

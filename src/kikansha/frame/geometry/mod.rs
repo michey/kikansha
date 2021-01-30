@@ -1,5 +1,6 @@
+use crate::engine::cache::empty_texture;
 use crate::engine::cache::{CachedEntities, CachedEntity};
-use crate::frame::ConcreteGraphicsPipeline;
+use crate::frame::frame::ConcreteGraphicsPipeline;
 use crate::scene::camera::CameraMatrices;
 use std::sync::Arc;
 use vulkano::buffer::BufferUsage;
@@ -8,17 +9,41 @@ use vulkano::command_buffer::AutoCommandBuffer;
 use vulkano::command_buffer::AutoCommandBufferBuilder;
 use vulkano::command_buffer::DynamicState;
 use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
+use vulkano::descriptor::descriptor_set::PersistentDescriptorSetBuf;
+use vulkano::descriptor::descriptor_set::PersistentDescriptorSetImg;
+use vulkano::descriptor::descriptor_set::PersistentDescriptorSetSampler;
 use vulkano::device::Queue;
+use vulkano::format::Format;
 use vulkano::framebuffer::RenderPassAbstract;
 use vulkano::framebuffer::Subpass;
+use vulkano::image::ImmutableImage;
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::GraphicsPipelineAbstract;
 use vulkano::sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode};
+
+type PDS = PersistentDescriptorSet<(
+    (
+        (
+            (
+                (
+                    (),
+                    PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<vs::ty::UBO>>>,
+                ),
+                PersistentDescriptorSetImg<Arc<ImmutableImage<Format>>>,
+            ),
+            PersistentDescriptorSetSampler,
+        ),
+        PersistentDescriptorSetImg<Arc<ImmutableImage<Format>>>,
+    ),
+    PersistentDescriptorSetSampler,
+)>;
 
 pub struct TriangleDrawSystem {
     gfx_queue: Arc<Queue>,
     pipeline: Arc<ConcreteGraphicsPipeline>,
     default_sampler: Arc<Sampler>,
+    buff: Arc<CpuAccessibleBuffer<vs::ty::UBO>>,
+    set: Arc<PDS>,
 }
 
 impl TriangleDrawSystem {
@@ -26,8 +51,9 @@ impl TriangleDrawSystem {
     pub fn new(
         gfx_queue: Arc<Queue>,
         subpass: Subpass<Arc<dyn RenderPassAbstract + Send + Sync + 'static>>,
+        format: Format,
     ) -> TriangleDrawSystem {
-        log::trace!("insance of {}",  std::any::type_name::<Self>());
+        log::trace!("insance of {}", std::any::type_name::<Self>());
         let pipeline = {
             let vs = vs::Shader::load(gfx_queue.device().clone())
                 .expect("failed to create shader module");
@@ -66,10 +92,48 @@ impl TriangleDrawSystem {
         )
         .unwrap();
 
+        let push_constants = vs::ty::UBO {
+            projection: CameraMatrices::emmpty(),
+            model: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            view: CameraMatrices::emmpty(),
+            instancePos: [0.0, 0.0, 0.0, 0.0],
+            // [-4.0, 0.0, -4.0, 0.0],
+            // [4.0, 0.0, -4.0, 0.0],
+        };
+
+        let buff = CpuAccessibleBuffer::from_data(
+            pipeline.device().clone(),
+            BufferUsage::all(),
+            false,
+            push_constants,
+        )
+        .unwrap();
+
+        let layout = pipeline.layout().descriptor_set_layout(0).unwrap();
+        let texture = empty_texture(format, gfx_queue.clone());
+        let set = Arc::new(
+            PersistentDescriptorSet::start(layout.clone())
+                .add_buffer(buff.clone())
+                .unwrap()
+                .add_sampled_image(texture.clone(), default_sampler.clone())
+                .unwrap()
+                .add_sampled_image(texture.clone(), default_sampler.clone())
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+
         TriangleDrawSystem {
             gfx_queue,
             pipeline,
             default_sampler,
+            buff,
+            set,
         }
     }
 
@@ -80,28 +144,6 @@ impl TriangleDrawSystem {
         cached_scene: &CachedEntities,
         dynamic_state: &DynamicState,
     ) -> AutoCommandBuffer {
-        let push_constants = vs::ty::UBO {
-            projection: matrices_buff.alligned_projection_matrix(),
-            model: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            view: matrices_buff.alligned_view_matrix(),
-            instancePos: [0.0, 0.0, 0.0, 0.0],
-            // [-4.0, 0.0, -4.0, 0.0],
-            // [4.0, 0.0, -4.0, 0.0],
-        };
-
-        let buff = CpuAccessibleBuffer::from_data(
-            self.pipeline.device().clone(),
-            BufferUsage::all(),
-            false,
-            push_constants,
-        )
-        .unwrap();
-
         let mut builder = AutoCommandBufferBuilder::secondary_graphics(
             self.gfx_queue.device().clone(),
             self.gfx_queue.family(),
@@ -109,58 +151,42 @@ impl TriangleDrawSystem {
         )
         .unwrap();
 
+        {
+            let mut content = self.buff.write().unwrap();
+            content.projection = matrices_buff.alligned_projection_matrix();
+            content.view = matrices_buff.alligned_view_matrix();
+        }
+
         for cached_entity in cached_scene.entities.clone() {
             match cached_entity {
                 CachedEntity::Regular(r) => {
-                    for _mutation in r.mutations {
-                        let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
+                    // for _mutation in r.mutations {
 
-                        let set = PersistentDescriptorSet::start(layout.clone())
-                            .add_buffer(buff.clone())
-                            .unwrap()
-                            .add_sampled_image(r.color_texture.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .add_sampled_image(r.normal_texture.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .build()
-                            .unwrap();
-
-                        builder
-                            .draw(
-                                self.pipeline.clone(),
-                                dynamic_state,
-                                r.vert_params.clone(),
-                                set,
-                                (),
-                            )
-                            .unwrap();
-                    }
+                    builder
+                        .draw(
+                            self.pipeline.clone(),
+                            dynamic_state,
+                            r.vert_params.clone(),
+                            self.set.clone(),
+                            (),
+                        )
+                        .unwrap();
+                    // }
                 }
                 CachedEntity::Indexed(i) => {
-                    for _mutation in i.mutations {
-                        let layout = self.pipeline.layout().descriptor_set_layout(0).unwrap();
+                    // for _mutation in i.mutations {
 
-                        let set = PersistentDescriptorSet::start(layout.clone())
-                            .add_buffer(buff.clone())
-                            .unwrap()
-                            .add_sampled_image(i.color_texture.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .add_sampled_image(i.normal_texture.clone(), self.default_sampler.clone())
-                            .unwrap()
-                            .build()
-                            .unwrap();
-
-                        builder
-                            .draw_indexed(
-                                self.pipeline.clone(),
-                                dynamic_state,
-                                i.vert_params.clone(),
-                                i.indices.clone(),
-                                set,
-                                (),
-                            )
-                            .unwrap();
-                    }
+                    builder
+                        .draw_indexed(
+                            self.pipeline.clone(),
+                            dynamic_state,
+                            i.vert_params.clone(),
+                            i.indices.clone(),
+                            self.set.clone(),
+                            (),
+                        )
+                        .unwrap();
+                    // }
                 }
             }
         }

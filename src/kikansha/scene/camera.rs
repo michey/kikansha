@@ -29,6 +29,15 @@ impl CameraMatrices {
     pub fn alligned_view_matrix(self) -> [[f32; 4]; 4] {
         Self::allign(self.view_matrix)
     }
+
+    pub fn emmpty() -> [[f32; 4]; 4] {
+        [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ]
+    }
 }
 
 pub trait ViewAndProject {
@@ -77,7 +86,6 @@ fn calcullate_proj_m(
     glm::perspective(aspect_ratio, fov, near_plane_dist, far_plane_dist)
 }
 
-
 #[derive(Debug, Copy, Clone)]
 pub struct StickyRotatingCamera {
     view_m: Matrix4<f32>,
@@ -102,7 +110,7 @@ impl StickyRotatingCamera {
     }
 
     pub fn new(distance: f32, yaw: f32, pitch: f32) -> Self {
-        log::trace!("insance of {}",  std::any::type_name::<Self>());
+        log::trace!("insance of {}", std::any::type_name::<Self>());
         let eye = Self::calculate_eye(distance, yaw, pitch);
         let fov: f32 = 45.0;
         let aspect_ratio: f32 = 16.0 / 9.0;

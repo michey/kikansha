@@ -3,6 +3,8 @@ extern crate vulkano_shaders;
 extern crate vulkano_win;
 extern crate winit;
 
+use clap::App;
+use clap::Arg;
 use kikansha::engine::State;
 use kikansha::figure::FigureMutation;
 use kikansha::figure::FigureSet;
@@ -13,6 +15,7 @@ use kikansha::scene::gltf::LoadingError;
 use kikansha::scene::lights::PointLight;
 use kikansha::scene::Scene;
 use std::f32::consts::PI;
+use std::process::exit;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
@@ -32,8 +35,59 @@ impl Drop for QuitOnScopeExit<'_> {
 }
 
 fn main() {
+    log4rs::init_file(
+        "/home/michey/Projects/hello_vulkan/config/log4rs.yaml",
+        Default::default(),
+    )
+    .unwrap();
 
-    log4rs::init_file("/home/michey/Projects/hello_vulkan/config/log4rs.yaml", Default::default()).unwrap();
+    let matches = App::new("kikansha")
+        .version("1.0")
+        .author("")
+        .about("")
+        .arg(
+            Arg::with_name("debugger")
+                .short("d")
+                .long("debugger")
+                .help("Wait for debugger"),
+        )
+        .arg(
+            Arg::with_name("validation")
+                .short("v")
+                .long("validation")
+                .help("Run with validation layer"),
+        )
+        .arg(
+            Arg::with_name("color_l")
+                .short("c")
+                .long("color_l")
+                .takes_value(true)
+                .value_name("level")
+                .help("Set debug level for deferred shader"),
+        )
+        .get_matches();
+
+    if matches.is_present("debugger") {
+        let url = format!(
+            "vscode://vadimcn.vscode-lldb/launch/config?{{'request':'attach','pid':{}}}",
+            std::process::id()
+        );
+        log::info!("{}", &url);
+        std::process::Command::new("code")
+            .arg("--open-url")
+            .arg(url)
+            .output()
+            .unwrap();
+        std::thread::sleep_ms(10000); // Wait for debugger to attach
+    }
+
+    let color_debug_level: i32 = matches
+        .value_of("color_l")
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(0);
+
+    let run_with_validation = matches.is_present("validation");
+
 
     let mut yaw = PI / 4.0;
     let mut pitch = -PI / 4.0;
@@ -62,8 +116,10 @@ fn main() {
                 let teapot_set = FigureSet::new(
                     mesh.clone(),
                     teapot_mutations,
-                    "/home/michey/Projects/hello_vulkan/src/kikansha/frame/resources/tex.png".to_string(),
-                    "/home/michey/Projects/hello_vulkan/src/kikansha/frame/resources/tex.png".to_string(),
+                    "/home/michey/Projects/hello_vulkan/src/kikansha/frame/resources/tex.png"
+                        .to_string(),
+                    "/home/michey/Projects/hello_vulkan/src/kikansha/frame/resources/tex.png"
+                        .to_string(),
                 );
                 scene_sets.push(teapot_set);
             }
@@ -124,5 +180,11 @@ fn main() {
         }
     });
 
-    State::run_loop(&scene, event_send, quit_recv);
+    State::run_loop(
+        &scene,
+        event_send,
+        quit_recv,
+        run_with_validation,
+        color_debug_level,
+    );
 }

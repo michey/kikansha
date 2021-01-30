@@ -1,5 +1,6 @@
-extern crate png;
 extern crate log;
+extern crate png;
+extern crate vk_sys as vk;
 extern crate vulkano;
 
 pub mod debug;

@@ -2,15 +2,13 @@ pub mod cache;
 mod queue;
 
 use crate::debug::fps::Counter;
-use crate::debug::tracing::Tracer;
 use crate::engine::cache::SceneCache;
 use crate::engine::queue::QueueFamilyIndices;
+use crate::frame::frame::Pass;
 use crate::frame::geometry::TriangleDrawSystem;
 use crate::frame::system::FrameSystem;
-use crate::frame::Pass;
 use crate::scene::camera::ViewAndProject;
 use crate::scene::Scene;
-use core::time::Duration;
 use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::SyncSender;
@@ -46,23 +44,18 @@ const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 720;
 
 /// Required device extensions
-fn device_extensions() -> DeviceExtensions {
+fn device_extensions(validation_layer: bool) -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
         khr_storage_buffer_storage_class: true,
-        // ext_debug_utils: true,
+        ext_debug_utils: validation_layer,
         ..DeviceExtensions::none()
     }
 }
 
-#[cfg(debug_assertions)]
-const ENABLE_VALIDATION_LAYERS: bool = true;
-#[cfg(not(debug_assertions))]
-const ENABLE_VALIDATION_LAYERS: bool = false;
-
 const VALIDATION_LAYERS: &[&str] = &[
     // "VK_LAYER_RENDERDOC_Capture",
-    "VK_LAYER_NV_optimus",
+    // "VK_LAYER_NV_optimus",
     // "VK_LAYER_LUNARG_monitor",
     // "VK_LAYER_LUNARG_screenshot",
     // "VK_LAYER_LUNARG_device_simulation",
@@ -90,12 +83,22 @@ pub struct State {
 }
 
 impl State {
-    fn init(surface: Arc<Surface<Window>>, instance: Arc<Instance>) -> Self {
-        let debug_callback = Self::setup_debug_callback(&instance);
+    fn init(
+        surface: Arc<Surface<Window>>,
+        instance: Arc<Instance>,
+        validation_layer: bool,
+        color_debug_level: i32,
+    ) -> Self {
+        let debug_callback = Self::setup_debug_callback(&instance, validation_layer);
 
-        let physical_device_index = Self::pick_physical_device(&instance, &surface);
-        let (device, graphics_queue, present_queue) =
-            Self::create_logical_device(physical_device_index, &instance, &surface);
+        let physical_device_index =
+            Self::pick_physical_device(&instance, &surface, validation_layer);
+        let (device, graphics_queue, present_queue) = Self::create_logical_device(
+            physical_device_index,
+            &instance,
+            &surface,
+            validation_layer,
+        );
         let dynamic_state_raw = DynamicState::none();
 
         let dynamic_state = Mutex::new(dynamic_state_raw);
@@ -112,13 +115,20 @@ impl State {
         );
 
         let dimensions = swap_chain_images[0].dimensions();
-        let frame_system =
-            FrameSystem::new(graphics_queue.clone(), swap_chain.format(), dimensions);
+        let frame_system = FrameSystem::new(
+            graphics_queue.clone(),
+            swap_chain.format(),
+            dimensions,
+            color_debug_level,
+        );
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
 
-        let triangle_draw_system =
-            TriangleDrawSystem::new(graphics_queue.clone(), frame_system.deferred_subpass());
+        let triangle_draw_system = TriangleDrawSystem::new(
+            graphics_queue.clone(),
+            frame_system.deferred_subpass(),
+            swap_chain.format(),
+        );
 
         State {
             instance,
@@ -149,8 +159,8 @@ impl State {
         (events_loop, surface)
     }
 
-    fn create_instance() -> Arc<Instance> {
-        if ENABLE_VALIDATION_LAYERS && !Self::check_validation_layer_support() {
+    fn create_instance(validation_layer: bool) -> Arc<Instance> {
+        if validation_layer && !Self::check_validation_layer_support() {
             log::error!("Validation layers requested, but not available!")
         }
         let supported_extensions = InstanceExtensions::supported_by_core()
@@ -176,8 +186,8 @@ impl State {
                 patch: 0,
             }),
         };
-        let required_extensions = Self::get_required_extensions();
-        if ENABLE_VALIDATION_LAYERS && Self::check_validation_layer_support() {
+        let required_extensions = Self::get_required_extensions(validation_layer);
+        if validation_layer && Self::check_validation_layer_support() {
             Instance::new(
                 Some(&app_info),
                 &required_extensions,
@@ -190,9 +200,13 @@ impl State {
         }
     }
 
-    fn pick_physical_device(instance: &Arc<Instance>, surface: &Arc<Surface<Window>>) -> usize {
+    fn pick_physical_device(
+        instance: &Arc<Instance>,
+        surface: &Arc<Surface<Window>>,
+        validation_layer: bool,
+    ) -> usize {
         PhysicalDevice::enumerate(&instance)
-            .position(|device| Self::is_device_suitable(&device, surface))
+            .position(|device| Self::is_device_suitable(&device, surface, validation_layer))
             .expect("failed to find a suitable GPU!")
     }
 
@@ -200,10 +214,11 @@ impl State {
         physical_device_idx: usize,
         instance: &Arc<Instance>,
         surface: &Arc<Surface<Window>>,
+        validation_layer: bool,
     ) -> (Arc<Device>, Arc<Queue>, Arc<Queue>) {
         let physical_device = PhysicalDevice::from_index(instance, physical_device_idx).unwrap();
         let indices = Self::find_queue_families(surface, &physical_device);
-
+        log::trace!("1");
         let families = [indices.graphics_family, indices.present_family];
 
         let uniquer_queue_family: HashSet<&i32> = families.iter().collect();
@@ -219,7 +234,7 @@ impl State {
         let (device, mut queues) = Device::new(
             physical_device,
             &Features::none(),
-            &device_extensions(),
+            &device_extensions(validation_layer),
             queue_families,
         )
         .expect("Failed to create logical device");
@@ -228,15 +243,24 @@ impl State {
         (device, graphics_queue, present_queue)
     }
 
-    fn check_device_support_extension(device: &PhysicalDevice) -> bool {
+    fn check_device_support_extension(device: &PhysicalDevice, validation_layer: bool) -> bool {
         let available_extensions = DeviceExtensions::supported_by_device(*device);
-        let device_extensions = device_extensions();
+        let device_extensions = device_extensions(validation_layer);
+        log::trace!(
+            "available_extensions: {:?}, \ndevice_extensions: {:?}",
+            available_extensions,
+            device_extensions,
+        );
         available_extensions.intersection(&device_extensions) == device_extensions
     }
 
-    fn is_device_suitable(device: &PhysicalDevice, surface: &Arc<Surface<Window>>) -> bool {
+    fn is_device_suitable(
+        device: &PhysicalDevice,
+        surface: &Arc<Surface<Window>>,
+        validation_layer: bool,
+    ) -> bool {
         let indices = Self::find_queue_families(surface, device);
-        let extension_supported = Self::check_device_support_extension(device);
+        let extension_supported = Self::check_device_support_extension(device, validation_layer);
         let swap_chain_adequate = if extension_supported {
             let capabilities = surface
                 .capabilities(*device)
@@ -246,6 +270,12 @@ impl State {
         } else {
             false
         };
+        log::trace!(
+            "3 {}, {}, {},",
+            indices.is_complete(),
+            extension_supported,
+            swap_chain_adequate
+        );
         indices.is_complete() && extension_supported && swap_chain_adequate
     }
 
@@ -315,6 +345,8 @@ impl State {
             graphics_queue.into()
         };
 
+        log::trace!("1");
+
         let (swap_chain, images) = match old_swapchain {
             Some(old) => Swapchain::with_old_swapchain(
                 device.clone(),
@@ -364,6 +396,7 @@ impl State {
             dynamic_state.lock().unwrap().viewports = Some(vec![viewport]);
         };
 
+        log::trace!("2");
         (swap_chain, images)
     }
 
@@ -409,45 +442,55 @@ impl State {
             .unwrap()
             .map(|l| l.name().to_owned())
             .collect();
+        log::trace!(
+            "supported layers: {:?}, \n reuired layers: {:?}",
+            layers,
+            VALIDATION_LAYERS
+        );
         VALIDATION_LAYERS
             .iter()
             .all(|layer_name| layers.contains(&layer_name.to_string()))
     }
-    fn get_required_extensions() -> InstanceExtensions {
+
+    fn get_required_extensions(validation_layer: bool) -> InstanceExtensions {
         let mut extensions = vulkano_win::required_extensions();
 
         // extensions.khr_swapchain = true;
         // extensions.khr_storage_buffer_storage_class = true;
         // extensions.ext_debug_utils = true;
-        if ENABLE_VALIDATION_LAYERS {
-            extensions.ext_debug_utils = true;
-            extensions.khr_wayland_surface = false;
-            extensions.khr_android_surface = false;
-            extensions.khr_win32_surface = false;
-            extensions.mvk_ios_surface = false;
-            extensions.mvk_macos_surface = false;
-            extensions.nn_vi_surface = false;
-        }
+
+        extensions.ext_debug_utils = validation_layer;
+        // extensions.khr_wayland_surface = false;
+        // extensions.khr_android_surface = false;
+        // extensions.khr_win32_surface = false;
+        // extensions.mvk_ios_surface = false;
+        // extensions.mvk_macos_surface = false;
+        // extensions.nn_vi_surface = false;
+
         extensions
     }
-    fn setup_debug_callback(instance: &Arc<Instance>) -> Option<DebugCallback> {
-        if !ENABLE_VALIDATION_LAYERS {
+    fn setup_debug_callback(
+        instance: &Arc<Instance>,
+        validation_layer: bool,
+    ) -> Option<DebugCallback> {
+        if !validation_layer {
             return None;
         }
-        let msg_types = MessageType::all();
+        // let msg_types = MessageType::all();
 
-        let msg_severity = MessageSeverity {
-            error: true,
-            warning: true,
-            information: true,
-            verbose: true,
-        };
-        DebugCallback::new(&instance, msg_severity, msg_types, |msg| {
-            log::info!("Debug Layer: {:?}", msg.description,);
-        })
-        .ok()
+        // let msg_severity = MessageSeverity {
+        //     error: true,
+        //     warning: true,
+        //     information: true,
+        //     verbose: true,
+        // };
+        // DebugCallback::new(&instance, msg_severity, msg_types, |msg| {
+        //     log::info!("Debug Layer: {:?}", msg.description,);
+        // })
+        // .ok();
+        None
     }
-    fn recreate_swap_chain(&mut self) {
+    fn recreate_swap_chain(&mut self, color_debug_level: i32) {
         let (swap_chain, images) = Self::create_swap_chain(
             &self.instance,
             &self.surface,
@@ -462,7 +505,7 @@ impl State {
         let dimensions = images[0].dimensions();
 
         self.frame_system
-            .recreate_render_pass(swap_chain.format(), dimensions);
+            .recreate_render_pass(swap_chain.format(), dimensions, color_debug_level);
         self.swap_chain = swap_chain;
         self.swap_chain_images = images;
     }
@@ -471,10 +514,12 @@ impl State {
         scene: &Scene<T>,
         _event_send: SyncSender<f32>,
         quit_recv: Receiver<bool>,
+        validation_layer: bool,
+        color_debug_level: i32,
     ) {
-        let instance_unb = Self::create_instance();
+        let instance_unb = Self::create_instance(validation_layer);
         let (mut event_loop, surface) = Self::init_loop(&instance_unb);
-        let mut state = Self::init(surface, instance_unb);
+        let mut state = Self::init(surface, instance_unb, validation_layer, color_debug_level);
 
         let mut counter = Counter::new(10);
 
@@ -517,7 +562,7 @@ impl State {
                         let dimensions: [u32; 2] = state.surface.window().inner_size().into();
                         locked_camera.update_ar(dimensions[0] as f32 / dimensions[1] as f32);
                     }
-                    state.recreate_swap_chain();
+                    state.recreate_swap_chain(color_debug_level);
                     state.recreate_swap_chain = false;
                 }
 
@@ -574,7 +619,7 @@ impl State {
                             draw_pass.execute(cb);
                         }
                         Pass::Lighting(mut lighting) => {
-                            lighting.light();
+                            lighting.light(color_debug_level);
                         }
                         Pass::Finished(af) => {
                             after_future = Some(af);

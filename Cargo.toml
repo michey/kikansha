@@ -20,6 +20,7 @@ debug = true
 
 [dependencies]
 vulkano = "0.20.0"
+vk-sys = "0.5.3"
 vulkano-shaders = "0.20.0"
 gltf = "0.15.2"
 winit = "0.24"
@@ -29,3 +30,4 @@ nalgebra-glm = "0.10.0"
 png = "0.16.8"
 log = "0.4"
 log4rs = "1.0.0"
+clap = "2.33.3"

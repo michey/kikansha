@@ -38,7 +38,7 @@ impl CachedIndexedEntity {
         color_texture: Arc<ImmutableImage<Format>>,
         normal_texture: Arc<ImmutableImage<Format>>,
     ) -> Self {
-        log::trace!("insance of {}",  std::any::type_name::<Self>());
+        log::trace!("insance of {}", std::any::type_name::<Self>());
         CachedIndexedEntity {
             vert_params,
             indices,
@@ -64,7 +64,7 @@ impl CachedRegularEntity {
         color_texture: Arc<ImmutableImage<Format>>,
         normal_texture: Arc<ImmutableImage<Format>>,
     ) -> Self {
-        log::trace!("insance of {}",  std::any::type_name::<Self>());
+        log::trace!("insance of {}", std::any::type_name::<Self>());
         CachedRegularEntity {
             vert_params,
             mutations,
@@ -87,7 +87,7 @@ pub struct SceneCache {
 
 impl SceneCache {
     pub fn default() -> Self {
-        log::trace!("insance of {}",  std::any::type_name::<Self>());
+        log::trace!("insance of {}", std::any::type_name::<Self>());
         SceneCache {
             cache_id: 0,
             state: None,
@@ -122,7 +122,7 @@ impl SceneCache {
         device: Arc<Device>,
         queue: Arc<Queue>,
     ) -> CachedEntities {
-        log::trace!("insance of {}",  std::any::type_name::<CachedEntities>());
+        log::trace!("insance of {}", std::any::type_name::<CachedEntities>());
 
         let entities = figures
             .iter()
@@ -240,4 +240,13 @@ fn load_texture_by_path(
         .unwrap()
     };
     io::Result::Ok(texture)
+}
+
+pub fn empty_texture(format: Format, queue: Arc<Queue>) -> Arc<ImmutableImage<Format>> {
+    load_texture_by_path(
+        "/home/michey/Projects/hello_vulkan/src/kikansha/frame/resources/tex.png".to_string(),
+        format,
+        queue,
+    )
+    .unwrap()
 }
